@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white"></a>
+  <a href="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml"><img alt="tests workflow" src="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml/badge.svg"></a>
   <img alt="Node.js >= 20" src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white">
   <img alt="dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen">
   <img alt="tests: 57 passed" src="https://img.shields.io/badge/tests-57%20passed-brightgreen">

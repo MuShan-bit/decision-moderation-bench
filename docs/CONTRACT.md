@@ -2,14 +2,14 @@
 
 项目：`decision-moderation-bench` —— 基于决策模型（TypeSafe System One / typed-decision 协议）的中文内容安全审核跑分台：
 Web 控制台 + 真实数据集 + 速度/准确率跑分。
-真实 provider：`systemone`（百炼决策模型 `decision-model-preview`）、`bamboonode`（StartLux `startlux-decision-27b-autothink`）、`jev`（Jev 官方网关 `jev-preview` / `jev-latest`）；`mock` 仅离线演示。
+真实 provider：`dashscope`（百炼 DashScope 决策模型 `decision-model-preview`）、`bamboonode`（StartLux `startlux-decision-27b-autothink`）、`jev`（Jev 官方网关 `jev-preview` / `jev-latest`）；`mock` 仅离线演示。
 
 工作目录（workspace root）：`/Users/mushan/Downloads/untitled folder 2`
 
 技术约束（重要）：
 - Node.js v24 可用（`node` 在 PATH）。**后端/前端零 npm 依赖**，只用 Node 内置模块（`node:http`、`node:fs`、全局 `fetch` 等）。不要 `npm install`。
 - 数据准备脚本用 **Python 3 标准库**（`python3` 即 3.14，只有标准库，没有 pandas/numpy；不要安装新包）。
-- 所有产物必须能在离线状态下启动/运行（mock provider 兜底），联网时走真实决策模型 provider（systemone / bamboonode / jev）。
+- 所有产物必须能在离线状态下启动/运行（mock provider 兜底），联网时走真实决策模型 provider（dashscope / bamboonode / jev）。
 - 文本为中文；UI 文案中文。
 - 不要提交/打印 `.env` 里的 API Key。不要 `git init`/`git commit`（无需要）。
 
@@ -91,16 +91,16 @@ Web 控制台 + 真实数据集 + 速度/准确率跑分。
 
 服务默认 `http://127.0.0.1:8788`，静态页面从 `public/` 提供。
 
-- `GET /api/health` → `{"ok":true,"provider":"systemone","model":"decision-model-preview","dataset":{"total":825},"apiKeyConfigured":true,"workspaceConfigured":true,"bamboonodeKeyConfigured":false,"jevKeyConfigured":false,"hasResults":true}`
-- `GET /api/config` → `{"providers":["systemone","bamboonode","jev","mock"],"models":["decision-model-preview"],"providerModels":{"systemone":["decision-model-preview"],"bamboonode":["startlux-decision-27b-autothink"],"jev":["jev-preview","jev-latest"],"mock":["mock-rule-v1"]},"defaultProvider":"systemone","defaultModel":"decision-model-preview","taxonomy":[{"code":"safe","label":"正常"},...],"concurrencyOptions":[1,2,4,8,16],"latestResultId":"..."}`（前端用 `providerModels` 做 Provider→Model 级联筛选）
+- `GET /api/health` → `{"ok":true,"provider":"dashscope","model":"decision-model-preview","dataset":{"total":825},"apiKeyConfigured":true,"workspaceConfigured":true,"bamboonodeKeyConfigured":false,"jevKeyConfigured":false,"hasResults":true}`
+- `GET /api/config` → `{"providers":["dashscope","bamboonode","jev","mock"],"models":["decision-model-preview"],"providerModels":{"dashscope":["decision-model-preview"],"bamboonode":["startlux-decision-27b-autothink"],"jev":["jev-preview","jev-latest"],"mock":["mock-rule-v1"]},"defaultProvider":"dashscope","defaultModel":"decision-model-preview","taxonomy":[{"code":"safe","label":"正常"},...],"concurrencyOptions":[1,2,4,8,16],"latestResultId":"..."}`（前端用 `providerModels` 做 Provider→Model 级联筛选）
 - `GET /api/dataset?offset=0&limit=50&filter=all|violation|safe|error` → `{"total":820,"items":[{sample fields...}]}`（不含 NSFW 原文时可选，但默认返回；sensitive 字段供前端打码）
 - `GET /api/results?page=1&pageSize=6` → `{"total":12,"page":1,"pageSize":6,"totalPages":2,"latestResultId":"bench-...","runs":[{"runId":"bench-...","provider":"bamboonode","model":"startlux-decision-27b-autothink","simulated":false,"startedAt":"...","finishedAt":"...","sampleCount":825,"datasetTotal":825,"limit":825,"concurrency":4,"accuracy":0.8376,"precision":0.8654,"recall":0.8819,"f1":0.8736,"macroF1":0.754,"p50":1533,"p95":7977.6,"throughputRps":1.58,"tokensTotal":699963,"errors":0,"perCategory":{...}}]}`：历史跑分分页摘要（按结束时间倒序，不含 records 正文），供「跑分记录 / 模型对比」使用；`page` 默认 1，`pageSize` 默认 10、上限 50，越界 page 自动夹到最后一页
 - `GET /api/results/latest` → 最新 bench result（结构见第 6 节）或 `null`
 - `GET /api/results/:runId` → 结果
 - `DELETE /api/results/:runId` → `{"ok":true,"runId":"...","latestResultId":"..."}`：删除一条历史跑分；若删除的是 latest 指向记录，自动回退到剩余最新一条（没有则删除 `latest.json`），不存在返回 404
-- `POST /api/benchmark` body `{"limit":200,"concurrency":4,"provider":"systemone","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
+- `POST /api/benchmark` body `{"limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
 - `GET /api/benchmark/:runId` → `{"runId":"...","status":"queued|running|done|error","done":123,"total":820,"resultId":"bench-...","error":null,"startedAt":"...","elapsedMs":12345}`
-- `POST /api/moderate` body `{"text":"...","provider":"systemone"}`（或 `bamboonode` + 对应 `model`）→ `{"verdict":{...},"latencyMs":830,"provider":"systemone","model":"decision-model-preview","parseError":false,"raw":"..."}`
+- `POST /api/moderate` body `{"text":"...","provider":"dashscope"}`（或 `bamboonode` + 对应 `model`）→ `{"verdict":{...},"latencyMs":830,"provider":"dashscope","model":"decision-model-preview","parseError":false,"raw":"..."}`
 - `GET /api/results/:runId/export.csv`（可选，前端也可本地生成）
 
 静态路径：`/` → `public/index.html`；`/app.js`、`/styles.css` 等。
@@ -127,7 +127,7 @@ user：`待审核文本：\n<<<\n{text}\n>>>`
 ## 6. 跑分结果结构 `results/<runId>.json`（同时复制到 `results/latest.json`）
 
 ```json
-{"runId":"bench-...","startedAt":"ISO","finishedAt":"ISO","provider":"systemone","model":"decision-model-preview",
+{"runId":"bench-...","startedAt":"ISO","finishedAt":"ISO","provider":"dashscope","model":"decision-model-preview",
  "config":{"concurrency":4,"limit":820,"datasetTotal":820},
  "records":[{"id":"cold-0001","text":"...","source":"cold","sensitive":false,
    "gold":{"violation":true,"categories":["hate"]},

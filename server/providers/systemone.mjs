@@ -1,4 +1,4 @@
-// 阿里云百炼「决策模型（预览版）」provider —— TypeSafe System One 协议。
+// 阿里云百炼 DashScope「决策模型（预览版）」provider —— TypeSafe System One 协议。
 // 接口：POST https://{WorkspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1/systemone
 // 特点：一次前向完成分类/评分（不生成文本），返回概率分布与置信度；用于内容审核判定。
 // 契约：与 mock provider 相同（name/model/simulated/judge）。
@@ -49,7 +49,7 @@ export const ENSEMBLE_THRESHOLDS = Object.freeze({
   harmful: 0.6,
 });
 
-/** 构造 systemone 请求体（导出便于测试）；ensemble=false 时只问 category+severity（纯 argmax 模式） */
+/** 构造 System One 请求体（导出便于测试）；ensemble=false 时只问 category+severity（纯 argmax 模式） */
 export function buildSystemOnePayload(text, options = {}) {
   const questions = {
     category: {
@@ -90,7 +90,7 @@ function num(value, fallback = 0) {
 }
 
 /**
- * 把 systemone 响应归一化成契约 verdict。
+ * 把 System One 响应归一化成契约 verdict。
  * 决策规则（ensemble）：
  * 1. category 的 argmax 非 safe → 直接采用；
  * 2. 否则若某违规类别概率 >= 0.35 → 采用该类别；
@@ -219,7 +219,7 @@ function bodySnippet(bodyText, data) {
  * }} options
  */
 export function createSystemOneProvider(options = {}) {
-  const name = String(options.name || 'systemone');
+  const name = String(options.name || 'dashscope');
   const apiKey = String(options.apiKey ?? '').trim();
   if (!apiKey) throw new Error('API Key 未配置，无法创建决策模型 provider');
   const endpoint = buildSystemOneEndpoint(options);
@@ -273,7 +273,7 @@ export function createSystemOneProvider(options = {}) {
             );
           } else {
             console.warn(
-              '[systemone] 接口 404：请确认 SYSTEMONE_WORKSPACE_ID 正确、地域为 cn-beijing，且账号已开通决策模型权限',
+              `[${name}] 接口 404：请确认 SYSTEMONE_WORKSPACE_ID 正确、地域为 cn-beijing，且账号已开通决策模型权限`,
             );
           }
         }

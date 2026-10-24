@@ -8,11 +8,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..', '..');
 
 export const DEFAULT_MODELS = Object.freeze(['decision-model-preview']);
-export const DEFAULT_PROVIDER = 'systemone';
+export const DEFAULT_PROVIDER = 'dashscope';
 export const DEFAULT_MODEL = 'decision-model-preview';
 export const CONCURRENCY_OPTIONS = Object.freeze([1, 2, 4, 8, 16]);
 
-// BambooNode 网关：OpenAI 兼容 + systemone（typed-decision）接口，托管 Jev / StartLux 决策模型。
+// BambooNode 网关：OpenAI 兼容 + System One（typed-decision）接口，托管 Jev / StartLux 决策模型。
 // 网关 /api/pricing 目前可用的决策模型：typesafe/jev-1.13、typesafe/jev-1.14、
 // startlux-decision-27b-autothink。接口需要 BAMBOONODE_API_KEY。
 export const DEFAULT_BAMBOONODE_BASE_URL = 'https://api.bamboonode.dev/v1';
@@ -109,8 +109,9 @@ export function getConfig(env = process.env) {
   if (!models.includes(model)) models.unshift(model);
 
   const requestedProvider = String(env.MODERATION_PROVIDER ?? '').trim();
-  const configuredProvider = ['systemone', 'bamboonode', 'jev', 'mock'].includes(requestedProvider)
-    ? requestedProvider
+  const normalizedProvider = requestedProvider === 'systemone' ? 'dashscope' : requestedProvider;
+  const configuredProvider = ['dashscope', 'bamboonode', 'jev', 'mock'].includes(normalizedProvider)
+    ? normalizedProvider
     : DEFAULT_PROVIDER;
   const apiKey = String(env.DASHSCOPE_API_KEY ?? '').trim();
   const workspaceId = String(
@@ -127,7 +128,7 @@ export function getConfig(env = process.env) {
   const jevModels = parseList(env.JEVMODEL_MODELS || env.JEV_MODELS, DEFAULT_JEVMODEL_MODELS);
   // 真实 provider 缺少 Key/Workspace 时回退 mock，保证离线也能打开 demo；显式指定时 API 仍会报配置缺失。
   const providerReady =
-    configuredProvider === 'systemone'
+    configuredProvider === 'dashscope'
       ? Boolean(apiKey && (workspaceId || systemoneBaseUrl))
       : configuredProvider === 'bamboonode'
         ? Boolean(bamboonodeApiKey)

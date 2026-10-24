@@ -30,7 +30,7 @@
 - 输出是结构化概率 + 置信度，不需要解析自然语言，**parseFail 可以做到 0**；
 - 百炼决策模型输入 token 当前免费，RPM 1200 / TPM 2,000,000，适合批量跑分与在线一审。
 
-普通 OpenAI 兼容 chat 模型在百炼 Key 下会被限流（429）或权限拒绝，且需要生成 JSON、解析失败率不可控，因此不用于主对比。当前提供四个 provider：`systemone`（百炼）、`bamboonode`（StartLux）、`jev`（Jev / TypeSafe 官方网关）、`mock`（离线演示）；三个真实服务协议相同，仅 endpoint / Key / 模型名不同。前端按 `providerModels` 做 Provider→Model 级联，后端对跨 provider 的模型组合直接返回 400。
+普通 OpenAI 兼容 chat 模型在百炼 Key 下会被限流（429）或权限拒绝，且需要生成 JSON、解析失败率不可控，因此不用于主对比。当前提供四个 provider：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev / TypeSafe 官方网关）、`mock`（离线演示）；三个真实服务协议相同，仅 endpoint / Key / 模型名不同。前端按 `providerModels` 做 Provider→Model 级联，后端对跨 provider 的模型组合直接返回 400。
 
 ### 1.2 接口与请求结构
 
@@ -318,21 +318,21 @@ else: safe
 python3 scripts/prepare_data.py
 
 # 2) 全量准确率 + 延迟（并发 4）
-node scripts/benchmark.mjs --provider systemone --model decision-model-preview --concurrency 4
+node scripts/benchmark.mjs --provider dashscope --model decision-model-preview --concurrency 4
 
 # 3) 并发-吞吐曲线（每档 200 条）
 for c in 1 2 4 8; do
-  node scripts/benchmark.mjs --provider systemone --concurrency $c --limit 200
+  node scripts/benchmark.mjs --provider dashscope --concurrency $c --limit 200
 done
 
 # 4) 消融：关闭 attack/harmful 组合，仅 category argmax
-node scripts/benchmark.mjs --provider systemone --concurrency 4 --limit 200 --pure
+node scripts/benchmark.mjs --provider dashscope --concurrency 4 --limit 200 --pure
 
 # 5) 离线演示（无需 Key）
 node scripts/benchmark.mjs --provider mock --limit 200 --concurrency 4
 ```
 
-Web 端：`npm start` 后打开 <http://127.0.0.1:8788>，选择「全部 / 并发 4 / systemone / decision-model-preview」即可复现同一跑分，并可视化样本级明细。
+Web 端：`npm start` 后打开 <http://127.0.0.1:8788>，选择「全部 / 并发 4 / dashscope / decision-model-preview」即可复现同一跑分，并可视化样本级明细。
 
 ## 9. 附录：关键结果文件
 

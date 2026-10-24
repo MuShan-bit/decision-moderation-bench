@@ -158,7 +158,7 @@ process.env.PUBLIC_DIR = PUBLIC_DIR;
 process.env.DOTENV_PATH = path.join(TMP_ROOT, 'no-dotenv-file');
 process.env.DATASET_PATH = DATASET_FILE;
 process.env.MOCK_LATENCY_SCALE = '0';
-process.env.MODERATION_PROVIDER = 'systemone';
+process.env.MODERATION_PROVIDER = 'dashscope';
 process.env.MODERATION_MODEL = 'decision-model-preview';
 process.env.DASHSCOPE_API_KEY = FAKE_KEY;
 process.env.SYSTEMONE_WORKSPACE_ID = 'llm-test-workspace';
@@ -233,7 +233,7 @@ test('GET /api/health', async () => {
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /application\/json/);
   assert.equal(body.ok, true);
-  assert.equal(body.provider, 'systemone');
+  assert.equal(body.provider, 'dashscope');
   assert.equal(body.dataset.total, FIXTURE_SAMPLES.length);
   assert.equal(body.dataset.fallback, false);
   assert.equal(body.apiKeyConfigured, true);
@@ -245,15 +245,15 @@ test('GET /api/health', async () => {
 test('GET /api/config', async () => {
   const { res, body } = await getJson('/api/config');
   assert.equal(res.status, 200);
-  assert.deepEqual(body.providers, ['systemone', 'bamboonode', 'jev', 'mock']);
+  assert.deepEqual(body.providers, ['dashscope', 'bamboonode', 'jev', 'mock']);
   assert.deepEqual(body.models, ['decision-model-preview']);
   assert.deepEqual(body.providerModels, {
-    systemone: ['decision-model-preview'],
+    dashscope: ['decision-model-preview'],
     bamboonode: ['startlux-decision-27b-autothink'],
     jev: ['jev-preview', 'jev-latest'],
     mock: ['mock-rule-v1'],
   });
-  assert.equal(body.defaultProvider, 'systemone');
+  assert.equal(body.defaultProvider, 'dashscope');
   assert.equal(body.defaultModel, 'decision-model-preview');
   assert.equal(body.taxonomy.length, 8);
   assert.deepEqual(

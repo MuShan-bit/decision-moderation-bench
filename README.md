@@ -15,7 +15,7 @@
   <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20%2B-339933">
   <img alt="dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen">
   <img alt="tests: 58 passed" src="https://img.shields.io/badge/tests-58%20passed-brightgreen">
-  <img alt="providers: systemone / bamboonode / jev / mock" src="https://img.shields.io/badge/providers-systemone%20%7C%20bamboonode%20%7C%20jev%20%7C%20mock-5eead4">
+  <img alt="providers: dashscope / bamboonode / jev / mock" src="https://img.shields.io/badge/providers-dashscope%20%7C%20bamboonode%20%7C%20jev%20%7C%20mock-5eead4">
   <a href="https://github.com/MuShan-bit/decision-moderation-bench"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-decision--moderation--bench-181717?logo=github"></a>
 </p>
 
@@ -27,7 +27,7 @@
 
 ## ✨ 功能
 
-- **多 Provider，同一套协议**：`systemone`（百炼）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`mock`（离线规则模拟）
+- **多 Provider，同一套协议**：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`mock`（离线规则模拟）
 - **Provider → Model 级联**：前端只展示当前 provider 可用的模型，后端对跨 provider 的模型组合直接返回 `400 MODEL_NOT_ALLOWED`
 - **可复现评测集**：5 个公开中文数据集、固定 `seed=42`、金标全部来自原始标签映射，数据统计与局限见 [data/README.md](data/README.md)
 - **跑分记录按模型分组 + 分页 / 删除**：每次跑分独立保存为 `results/<runId>.json`，每页 6 条，可翻页查看或删除；删除 latest 会自动回退到上一条
@@ -84,7 +84,7 @@
 
 | 模型 | Provider | 准确率 | 精确率 | 召回率 | F1 | P50 延迟 | P95 延迟 | 吞吐 | 825 条总耗时 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `decision-model-preview` | 百炼 `systemone` | 73.2% | 83.5% | 72.2% | 0.774 | **130ms** | 1.94s | 11.03 req/s | 74.8s |
+| `decision-model-preview` | 百炼 `dashscope` | 73.2% | 83.5% | 72.2% | 0.774 | **130ms** | 1.94s | 11.03 req/s | 74.8s |
 | `startlux-decision-27b-autothink` | BambooNode `bamboonode` | **83.8%** | **86.5%** | 88.2% | **0.874** | 1.53s | 7.98s | 1.58 req/s | 8m41s |
 | `jev-preview` | Jev / TypeSafe `jev` | 79.9% | 80.5% | **90.3%** | 0.851 | 313ms | **359ms** | **12.46 req/s** | **66.2s** |
 
@@ -93,7 +93,7 @@
 - **速度呈现三种取舍**：百炼 P50 最快（130ms），但 P95 1.94s、吞吐 11.03 req/s；Jev P50 313ms、**P95 仅 359ms**、吞吐 **12.46 req/s** 为三者最高；StartLux P50 1.53s、P95 7.98s、吞吐 1.58 req/s。
 - 解析失败与调用错误均为 **0**；tokens：百炼 473,090（573/条），StartLux 699,963（848/条），Jev 941,054（1,141/条）。
 - 200 条样本档复测：百炼 ensemble **73.5%**、StartLux **85.0%**，与全量结论一致；百炼纯 argmax 仅 **61.5%**（消融详见报告）。
-- Jev 本次使用 `jev-preview`（1.14）跑全量；`jev-latest`（1.13 stable）已配置但未跑，可用 `node scripts/benchmark.mjs --provider jev --model jev-latest --concurrency 4` 补测。
+- Jev 本次使用 `jev-preview`（1.14）跑全量；`jev-latest`（1.13 stable）也可用 `node scripts/benchmark.mjs --provider jev --model jev-latest --concurrency 4` 跑同一套评测。
 
 ### 分类别 F1 对比（825 条）
 
@@ -119,7 +119,7 @@ cd decision-moderation-bench
 
 cp .env.example .env
 # 编辑 .env，按需填写：
-#   DASHSCOPE_API_KEY + SYSTEMONE_WORKSPACE_ID   # 百炼 systemone
+#   DASHSCOPE_API_KEY + SYSTEMONE_WORKSPACE_ID   # 百炼 dashscope
 #   BAMBOONODE_API_KEY                           # BambooNode / StartLux
 #   JEVMODEL_API_KEY                             # Jev 官方网关
 
@@ -133,8 +133,8 @@ npm start
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `DASHSCOPE_API_KEY` | 跑 `systemone` 必填 | 阿里云百炼 API Key |
-| `SYSTEMONE_WORKSPACE_ID` | 跑 `systemone` 必填 | 百炼 workspace id，默认域名 `https://{id}.cn-beijing.maas.aliyuncs.com` |
+| `DASHSCOPE_API_KEY` | 跑 `dashscope` 必填 | 阿里云百炼 API Key |
+| `SYSTEMONE_WORKSPACE_ID` | 跑 `dashscope` 必填 | 百炼 workspace id，默认域名 `https://{id}.cn-beijing.maas.aliyuncs.com` |
 | `SYSTEMONE_REGION` | 否 | 默认 `cn-beijing` |
 | `BAMBOONODE_API_KEY` | 跑 `bamboonode` 必填 | BambooNode 网关 Key |
 | `BAMBOONODE_BASE_URL` | 否 | 默认 `https://api.bamboonode.dev/v1` |
@@ -142,7 +142,7 @@ npm start
 | `JEVMODEL_API_KEY` | 跑 `jev` 必填 | Jev / TypeSafe 官方网关 Key |
 | `JEVMODEL_BASE_URL` | 否 | 默认 `https://api.typesafe.ai/v1` |
 | `JEVMODEL_MODELS` | 否 | 默认 `jev-preview,jev-latest` |
-| `MODERATION_PROVIDER` | 否 | 默认 `systemone`；可选 `systemone` / `bamboonode` / `jev` / `mock` |
+| `MODERATION_PROVIDER` | 否 | 默认 `dashscope`；可选 `dashscope` / `bamboonode` / `jev` / `mock` |
 | `MODERATION_MODEL` | 否 | 默认 `decision-model-preview` |
 | `PORT` / `HOST` | 否 | 默认 `8788` / `127.0.0.1` |
 | `RESULTS_DIR` | 否 | 结果目录，默认 `results/` |
@@ -173,7 +173,7 @@ npm start
 
 ```bash
 # 全部 825 条，并发 4
-node scripts/benchmark.mjs --provider systemone --model decision-model-preview --concurrency 4
+node scripts/benchmark.mjs --provider dashscope --model decision-model-preview --concurrency 4
 
 # StartLux（BambooNode）
 node scripts/benchmark.mjs --provider bamboonode --model startlux-decision-27b-autothink --concurrency 4
@@ -182,8 +182,8 @@ node scripts/benchmark.mjs --provider bamboonode --model startlux-decision-27b-a
 node scripts/benchmark.mjs --provider jev --model jev-preview --concurrency 4
 
 # 快速冒烟 / 指定输出目录 / 关闭 ensemble
-node scripts/benchmark.mjs --provider systemone --limit 20 --concurrency 2 --out /tmp/bench
-node scripts/benchmark.mjs --provider systemone --limit 200 --pure
+node scripts/benchmark.mjs --provider dashscope --limit 20 --concurrency 2 --out /tmp/bench
+node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 ```
 
 结果写入 `results/<runId>.json`，同时更新 `results/latest.json`。`--out` 可指定其他目录，避免覆盖主结果。
@@ -218,7 +218,7 @@ node scripts/benchmark.mjs --provider systemone --limit 200 --pure
 │   ├── benchmark.mjs       # 跑分引擎 / 指标 / 结果持久化
 │   ├── dataset.mjs         # 数据集加载
 │   ├── moderation.mjs      # taxonomy / 判定与阈值
-│   ├── providers/          # systemone / bamboonode / jev / mock
+│   ├── providers/          # dashscope / bamboonode / jev / mock
 │   └── lib/                # env / limiter
 ├── scripts/
 │   ├── prepare_data.py     # 数据集构建（Python 标准库）

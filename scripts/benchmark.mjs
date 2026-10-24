@@ -8,6 +8,7 @@ import {
   createProvider,
   PROVIDER_NAMES,
   resolveModelForProvider,
+  normalizeProviderName,
 } from '../server/providers/index.mjs';
 import {
   runBenchmark,
@@ -26,7 +27,7 @@ const HELP = `内容审核跑分 CLI（零依赖）
 选项：
   -n, --limit <n>          参与跑分的样本数（默认：全部）
   -c, --concurrency <n>    并发数 1-${MAX_CONCURRENCY}（默认：${DEFAULT_CONCURRENCY}）
-  -p, --provider <name>    provider：${PROVIDER_NAMES.join(' | ')}（默认取 .env MODERATION_PROVIDER，否则 systemone）
+  -p, --provider <name>    provider：${PROVIDER_NAMES.join(' | ')}（默认取 .env MODERATION_PROVIDER，否则 dashscope）
   -m, --model <name>       模型名（默认取该 provider 的默认模型；bamboonode 可选 typesafe/jev-1.14 等）
       --dataset <path>     自定义数据集 jsonl 路径
       --out <dir>          结果输出目录（默认 results/）
@@ -36,7 +37,7 @@ const HELP = `内容审核跑分 CLI（零依赖）
 
 示例：
   node scripts/benchmark.mjs --provider mock --limit 30 --concurrency 2
-  node scripts/benchmark.mjs --provider systemone --model decision-model-preview --limit 200 --concurrency 4
+  node scripts/benchmark.mjs --provider dashscope --model decision-model-preview --limit 200 --concurrency 4
   node scripts/benchmark.mjs --provider bamboonode --model startlux-decision-27b-autothink --limit 200 --concurrency 4
   node scripts/benchmark.mjs --provider jev --model jev-preview --limit 200 --concurrency 4
 `;
@@ -118,15 +119,15 @@ async function main() {
   }
 
   const cfg = getConfig();
-  const providerName = (args.provider || cfg.effectiveProvider || 'systemone').trim();
+  const providerName = normalizeProviderName((args.provider || cfg.effectiveProvider || 'dashscope').trim());
   if (!PROVIDER_NAMES.includes(providerName)) {
     fail(`不支持的 provider：${providerName}（可选 ${PROVIDER_NAMES.join(' / ')}）`);
   }
-  if (providerName === 'systemone' && !cfg.apiKey) {
-    fail('DASHSCOPE_API_KEY 未配置，无法使用 systemone；请改用 --provider mock');
+  if (providerName === 'dashscope' && !cfg.apiKey) {
+    fail('DASHSCOPE_API_KEY 未配置，无法使用 dashscope；请改用 --provider mock');
   }
-  if (providerName === 'systemone' && !cfg.workspaceId && !cfg.systemoneBaseUrl) {
-    fail('SYSTEMONE_WORKSPACE_ID 未配置，无法使用 systemone；请配置业务空间 ID 或 --provider mock');
+  if (providerName === 'dashscope' && !cfg.workspaceId && !cfg.systemoneBaseUrl) {
+    fail('SYSTEMONE_WORKSPACE_ID 未配置，无法使用 dashscope；请配置业务空间 ID 或 --provider mock');
   }
   if (providerName === 'bamboonode' && !cfg.bamboonodeApiKey) {
     fail('BAMBOONODE_API_KEY 未配置，无法使用 StartLux 决策模型；请在 .env 中配置该网关的 Key');
@@ -137,7 +138,7 @@ async function main() {
 
   let model;
   try {
-    // 级联校验：模型必须属于当前 provider（systemone → decision-model-preview；mock → mock-rule-v1）
+    // 级联校验：模型必须属于当前 provider（dashscope → decision-model-preview；mock → mock-rule-v1）
     model = resolveModelForProvider(providerName, args.model, cfg);
   } catch (error) {
     fail(error.message);

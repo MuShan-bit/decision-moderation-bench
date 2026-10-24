@@ -266,8 +266,8 @@
       warn.hidden = false;
       return;
     }
-    if (providerName === 'systemone' && health.apiKeyConfigured === false) {
-      warn.textContent = '未检测到 DASHSCOPE_API_KEY（百炼），选择 systemone 会返回配置错误。';
+    if (providerName === 'dashscope' && health.apiKeyConfigured === false) {
+      warn.textContent = '未检测到 DASHSCOPE_API_KEY（百炼），选择 dashscope 会返回配置错误。';
       warn.hidden = false;
       return;
     }

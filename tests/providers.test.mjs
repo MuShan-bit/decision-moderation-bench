@@ -9,6 +9,7 @@ import {
   resolveModelForProvider,
   buildDecisionEndpoint,
   createProvider,
+  normalizeProviderName,
   ProviderConfigError,
 } from '../server/providers/index.mjs';
 import { buildSystemOnePayload } from '../server/providers/systemone.mjs';
@@ -23,13 +24,15 @@ const CFG = {
 
 const isProviderError = (code) => (error) => error instanceof ProviderConfigError && error.code === code;
 
-test('provider 列表：systemone + bamboonode + jev + mock', () => {
-  assert.deepEqual([...PROVIDER_NAMES], ['systemone', 'bamboonode', 'jev', 'mock']);
+test('provider 列表：dashscope + bamboonode + jev + mock', () => {
+  assert.deepEqual([...PROVIDER_NAMES], ['dashscope', 'bamboonode', 'jev', 'mock']);
+  // 旧配置名兼容归一，不改变对外 provider 列表
+  assert.equal(normalizeProviderName('systemone'), 'dashscope');
 });
 
 test('providerModels 给出级联映射', () => {
   assert.deepEqual(providerModels(CFG), {
-    systemone: ['decision-model-preview'],
+    dashscope: ['decision-model-preview'],
     bamboonode: ['startlux-decision-27b-autothink'],
     jev: ['jev-preview', 'jev-latest'],
     mock: ['mock-rule-v1'],
@@ -40,6 +43,7 @@ test('providerModels 给出级联映射', () => {
 });
 
 test('resolveModelForProvider：缺省取该 provider 的默认模型', () => {
+  assert.equal(resolveModelForProvider('dashscope', '', CFG), 'decision-model-preview');
   assert.equal(resolveModelForProvider('systemone', '', CFG), 'decision-model-preview');
   assert.equal(resolveModelForProvider('bamboonode', '', CFG), 'startlux-decision-27b-autothink');
   assert.equal(resolveModelForProvider('jev', '', CFG), 'jev-preview');
@@ -52,7 +56,7 @@ test('resolveModelForProvider：拒绝跨 provider 的模型组合', () => {
     isProviderError('MODEL_NOT_ALLOWED'),
   );
   assert.throws(
-    () => resolveModelForProvider('systemone', 'mock-rule-v1', CFG),
+    () => resolveModelForProvider('dashscope', 'mock-rule-v1', CFG),
     isProviderError('MODEL_NOT_ALLOWED'),
   );
   assert.throws(
@@ -63,7 +67,7 @@ test('resolveModelForProvider：拒绝跨 provider 的模型组合', () => {
     () => resolveModelForProvider('jev', 'startlux-decision-27b-autothink', CFG),
     isProviderError('MODEL_NOT_ALLOWED'),
   );
-  assert.throws(() => resolveModelForProvider('dashscope', '', CFG), isProviderError('UNKNOWN_PROVIDER'));
+  assert.throws(() => resolveModelForProvider('unknown-provider', '', CFG), isProviderError('UNKNOWN_PROVIDER'));
 });
 
 test('buildDecisionEndpoint：/v1 补 /systemone，已带则不重复', () => {
@@ -106,12 +110,14 @@ test('createProvider：bamboonode 使用网关 key / endpoint / 模型', () => {
 });
 
 test('createProvider：缺 key/workspace 给出明确错误码', () => {
-  assert.throws(() => createProvider({ provider: 'dashscope' }), isProviderError('UNKNOWN_PROVIDER'));
-  assert.throws(() => createProvider({ provider: 'systemone', apiKey: '' }), isProviderError('MISSING_API_KEY'));
+  assert.throws(() => createProvider({ provider: 'unknown-provider' }), isProviderError('UNKNOWN_PROVIDER'));
+  assert.throws(() => createProvider({ provider: 'dashscope', apiKey: '' }), isProviderError('MISSING_API_KEY'));
   assert.throws(
-    () => createProvider({ provider: 'systemone', apiKey: 'sk-test' }),
+    () => createProvider({ provider: 'dashscope', apiKey: 'sk-test' }),
     isProviderError('MISSING_WORKSPACE'),
   );
+  // 旧配置名仍然可以创建
+  assert.throws(() => createProvider({ provider: 'systemone', apiKey: '' }), isProviderError('MISSING_API_KEY'));
   assert.throws(
     () => createProvider({ provider: 'bamboonode', apiKey: '' }),
     isProviderError('MISSING_API_KEY'),

@@ -32,7 +32,7 @@ test('getConfig：默认值', () => {
   const cfg = getConfig({});
   assert.equal(cfg.port, 8788);
   assert.equal(cfg.host, '127.0.0.1');
-  assert.equal(cfg.provider, 'systemone');
+  assert.equal(cfg.provider, 'dashscope');
   assert.equal(cfg.effectiveProvider, 'mock'); // 无 key/workspace 自动回退
   assert.equal(cfg.model, 'decision-model-preview');
   assert.equal(cfg.timeoutMs, 20000);

@@ -17,6 +17,7 @@ import {
   createProvider,
   providerModels,
   resolveModelForProvider,
+  normalizeProviderName,
   ProviderConfigError,
 } from './providers/index.mjs';
 import {
@@ -181,9 +182,11 @@ function getProviderFor(providerName, model) {
 
 function resolveProviderName(requested) {
   const cfg = getConfig();
-  const name = requested === undefined || requested === null || requested === ''
-    ? cfg.effectiveProvider
-    : String(requested).trim();
+  const name = normalizeProviderName(
+    requested === undefined || requested === null || requested === ''
+      ? cfg.effectiveProvider
+      : String(requested).trim(),
+  );
   if (!PROVIDER_NAMES.includes(name)) {
     throw new HttpError(
       400,
@@ -191,18 +194,18 @@ function resolveProviderName(requested) {
       'UNKNOWN_PROVIDER',
     );
   }
-  if (name === 'systemone') {
+  if (name === 'dashscope') {
     if (!cfg.apiKey) {
       throw new HttpError(
         400,
-        'DASHSCOPE_API_KEY 未配置，无法使用 systemone；请改用 mock，或在 .env 中配置真实 Key',
+        'DASHSCOPE_API_KEY 未配置，无法使用 dashscope；请改用 mock，或在 .env 中配置真实 Key',
         'MISSING_API_KEY',
       );
     }
     if (!cfg.workspaceId && !cfg.systemoneBaseUrl) {
       throw new HttpError(
         400,
-        'SYSTEMONE_WORKSPACE_ID 未配置，无法使用决策模型 provider；请配置业务空间 ID 或 SYSTEMONE_BASE_URL',
+        'SYSTEMONE_WORKSPACE_ID 未配置，无法使用 dashscope；请配置业务空间 ID 或 SYSTEMONE_BASE_URL',
         'MISSING_WORKSPACE',
       );
     }

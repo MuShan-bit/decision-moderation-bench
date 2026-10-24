@@ -1,0 +1,9 @@
+node_modules/
+.env
+results/*.json
+!results/.gitkeep
+data/raw/
+__pycache__/
+*.log
+.cache/
+.DS_Store

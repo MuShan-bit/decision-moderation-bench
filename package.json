@@ -1,0 +1,15 @@
+{
+  "name": "decision-moderation-bench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-model decision-model content moderation benchmark: reproducible Chinese eval set, web console, run history, model comparison and CLI runner.",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "data": "python3 scripts/prepare_data.py",
+    "bench": "node scripts/benchmark.mjs",
+    "test": "node --test tests/"
+  },
+  "engines": { "node": ">=20" }
+}

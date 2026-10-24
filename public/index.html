@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="多模型中文内容审核跑分台：决策模型评测、历史记录、模型对比、延迟与准确率可视化。">
+  <title>内容审核跑分台 · Decision Models Moderation Bench</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%235eead4' d='M12 2 4 5v6c0 5 3.4 9.6 8 11 4.6-1.4 8-6 8-11V5l-8-3Z'/%3E%3Cpath fill='%23070b14' d='m8.4 12.2 2.5 2.5 4.7-5.2 1.4 1.3-6.1 6.7-3.9-3.9Z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="bg-decor" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" role="img" aria-label="盾牌图标">
+          <path d="M12 2 4 5v6c0 5 3.4 9.6 8 11 4.6-1.4 8-6 8-11V5l-8-3Z" fill="url(#brandGrad)"/>
+          <path d="m8.4 12.2 2.5 2.5 4.7-5.2 1.4 1.3-6.1 6.7-3.9-3.9Z" fill="#070b14"/>
+          <defs>
+            <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#5eead4"/>
+              <stop offset="1" stop-color="#38bdf8"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <strong>内容审核跑分台</strong>
+        <small>多模型决策审核评测 · 跑分 / 记录 / 对比</small>
+      </span>
+    </div>
+    <div class="topbar-meta">
+      <span class="conn-pill loading" id="connStatus" role="status">
+        <i class="dot" aria-hidden="true"></i><span id="connText">连接中…</span>
+      </span>
+      <span class="badge" id="badgeProvider" title="当前 Provider">provider · —</span>
+      <span class="badge" id="badgeModel" title="当前 Model">model · —</span>
+      <span class="badge" id="badgeDataset" title="数据集样本总数">数据集 · —</span>
+      <button class="btn ghost sm" id="refreshBtn" type="button" title="重新拉取配置与最新结果">刷新</button>
+    </div>
+  </header>
+
+  <div class="banner mock" id="mockBanner" role="status" hidden>
+    <span class="banner-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2 1 21h22L12 2Zm1 15h-2v-2h2v2Zm0-4h-2V8h2v5Z"/></svg>
+    </span>
+    <div class="banner-body">
+      <strong>模拟模式</strong>
+      <span id="mockBannerText">当前使用 mock provider：跑分结果由本地模拟器生成，仅用于界面演示，不代表真实模型能力。</span>
+    </div>
+  </div>
+
+  <div class="banner error" id="errorBanner" role="alert" hidden>
+    <span class="banner-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z"/></svg>
+    </span>
+    <div class="banner-body">
+      <strong>后端接口不可用</strong>
+      <span id="errorBannerText">无法连接 <code>/api/*</code>，请确认后端服务已启动。</span>
+    </div>
+    <button class="btn sm" id="retryBtn" type="button">重试</button>
+  </div>
+
+  <main class="layout">
+    <!-- ============ 总览 ============ -->
+    <section class="panel" id="overviewPanel" aria-labelledby="overviewTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="overviewTitle">跑分总览</h2>
+          <p class="hint" id="overviewHint">最新一次跑分的核心指标</p>
+        </div>
+        <div class="result-meta" id="resultMeta"></div>
+      </div>
+
+      <div class="state-box" id="overviewLoading" role="status">正在加载跑分结果…</div>
+
+      <div class="state-box empty" id="overviewEmpty" hidden>
+        <svg class="empty-art" viewBox="0 0 120 88" width="140" height="103" aria-hidden="true">
+          <rect x="14" y="16" width="92" height="58" rx="9" fill="#0f172a" stroke="#334155" stroke-width="1.5"/>
+          <path d="M26 36h20M26 45h34M26 54h26" stroke="#475569" stroke-width="3" stroke-linecap="round"/>
+          <path d="M68 48v16M60 56h16" stroke="#5eead4" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="100" cy="16" r="7" fill="#f59e0b" opacity=".85"/>
+        </svg>
+        <h3>暂无跑分结果</h3>
+        <p id="overviewEmptyText">数据集已就绪。选择样本数与并发后点击「开始跑分」，这里会展示准确率、延迟与分类别指标。</p>
+        <button class="btn primary" id="emptyStartBtn" type="button">立即开始跑分</button>
+      </div>
+
+      <div class="kpi-grid" id="kpiGrid" hidden></div>
+    </section>
+
+    <!-- ============ 跑分控制 ============ -->
+    <section class="panel" id="runPanel" aria-labelledby="runTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="runTitle">跑分控制</h2>
+          <p class="hint" id="runHint">调用真实模型逐条审核，统计准确率与延迟</p>
+        </div>
+        <span class="pill" id="runStatePill" hidden></span>
+      </div>
+
+      <form class="run-form" id="runForm" autocomplete="off">
+        <label class="field">
+          <span>样本数</span>
+          <select id="limitSelect">
+            <option value="all">全部</option>
+            <option value="100">100</option>
+            <option value="200" selected>200</option>
+            <option value="400">400</option>
+            <option value="custom">自定义…</option>
+          </select>
+        </label>
+        <label class="field custom-limit" id="customLimitWrap" hidden>
+          <span>自定义数量</span>
+          <input id="customLimit" type="number" min="1" max="5000" step="1" value="50" inputmode="numeric">
+        </label>
+        <label class="field">
+          <span>并发</span>
+          <select id="concurrencySelect">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4" selected>4</option>
+            <option value="8">8</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Provider</span>
+          <select id="providerSelect">
+            <option value="systemone">systemone</option>
+            <option value="bamboonode">bamboonode</option>
+            <option value="jev">jev</option>
+            <option value="mock">mock</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select id="modelSelect">
+            <option value="decision-model-preview">decision-model-preview</option>
+            <option value="startlux-decision-27b-autothink">startlux-decision-27b-autothink</option>
+            <option value="jev-preview">jev-preview</option>
+            <option value="jev-latest">jev-latest</option>
+          </select>
+        </label>
+        <button class="btn primary start-btn" id="startBtn" type="submit">开始跑分</button>
+        <button class="btn" id="exportBtn" type="button" title="导出当前结果为 CSV" disabled>导出 CSV</button>
+      </form>
+
+      <p class="inline-note warn" id="apiKeyWarn" hidden>未检测到 DASHSCOPE_API_KEY（百炼），选择 systemone 会返回配置错误。</p>
+
+      <div class="run-progress" id="progressWrap" hidden aria-live="polite">
+        <div class="progress-head">
+          <div class="progress-label">
+            <span class="spinner" id="progressSpinner" aria-hidden="true"></span>
+            <span id="progressText">准备中…</span>
+          </div>
+          <div class="progress-num">
+            <span id="progressCount">0 / 0</span>
+            <span id="progressPct">0%</span>
+          </div>
+        </div>
+        <div class="progress-track" id="progressTrack">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-foot">
+          <span id="progressRunId"></span>
+          <span id="progressElapsed"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 跑分记录 ============ -->
+    <section class="panel" id="historyPanel" aria-labelledby="historyTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="historyTitle">跑分记录</h2>
+          <p class="hint" id="historyHint">按模型分组显示每次跑分；勾选 2 条以上可做横向对比</p>
+        </div>
+        <div class="history-tools">
+          <span class="pill" id="historyCount">0 条</span>
+          <button class="btn ghost sm" id="clearCompareBtn" type="button" hidden>清空对比</button>
+        </div>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="state-box empty" id="historyEmpty">暂无历史跑分记录。先跑一次分，结果会按模型归档在这里。</div>
+      </div>
+    </section>
+
+    <!-- ============ 模型对比 ============ -->
+    <section class="panel" id="comparePanel" hidden aria-labelledby="compareTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="compareTitle">模型对比</h2>
+          <p class="hint" id="compareHint">勾选「跑分记录」里的条目，这里会并排展示质量、延迟与分类别指标</p>
+        </div>
+        <span class="pill" id="compareCount"></span>
+      </div>
+      <div class="compare-warning" id="compareWarning" hidden></div>
+      <div class="compare-table-wrap" id="compareTable"></div>
+      <div class="compare-grid">
+        <div class="compare-card">
+          <h3>质量指标</h3>
+          <div class="compare-legend" id="compareLegend"></div>
+          <div class="compare-chart" id="compareQualityChart"></div>
+        </div>
+        <div class="compare-card">
+          <h3>延迟与吞吐</h3>
+          <div class="compare-chart" id="compareSpeedChart"></div>
+        </div>
+      </div>
+      <div class="compare-card wide">
+        <h3>分类别 F1</h3>
+        <div class="compare-table-wrap" id="compareCategoryTable"></div>
+      </div>
+    </section>
+
+    <!-- ============ 图表 ============ -->
+    <section class="chart-grid" id="chartGrid" hidden>
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>延迟分布</h2>
+            <p class="hint" id="latencyHint">单条审核耗时直方图（含 P50 / P95 参考线）</p>
+          </div>
+        </div>
+        <div class="chart-box" id="latencyChart"></div>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>混淆矩阵</h2>
+            <p class="hint">行 = 人工金标，列 = 模型预测</p>
+          </div>
+        </div>
+        <div class="confusion" id="confusionMatrix"></div>
+        <div class="confusion-legend" id="confusionLegend"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="categoryPanel" hidden aria-labelledby="categoryTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="categoryTitle">分类别 F1</h2>
+          <p class="hint" id="categoryHint">按 F1 降序，条形长度为 F1，右侧为样本支持数</p>
+        </div>
+      </div>
+      <div class="chart-box" id="categoryChart"></div>
+    </section>
+
+    <section class="panel" id="sourcePanel" hidden aria-labelledby="sourceTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="sourceTitle">来源细分</h2>
+          <p class="hint">不同数据集来源上的二分类准确率与 F1</p>
+        </div>
+      </div>
+      <div class="table-wrap" id="sourceTable"></div>
+    </section>
+
+    <!-- ============ 样本浏览器 ============ -->
+    <section class="panel" id="samplesPanel" aria-labelledby="samplesTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="samplesTitle">样本浏览器</h2>
+          <p class="hint" id="samplesHint">逐条查看金标、预测与耗时；判错样本会高亮</p>
+        </div>
+        <div class="samples-actions">
+          <button class="btn ghost sm" id="revealAllBtn" type="button" aria-pressed="false">全部显示原文</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <div class="segmented" id="verdictFilter" role="group" aria-label="结果筛选">
+          <button type="button" data-filter="all" class="active" aria-pressed="true">全部</button>
+          <button type="button" data-filter="wrong" aria-pressed="false">判错</button>
+          <button type="button" data-filter="violation" aria-pressed="false">违规</button>
+          <button type="button" data-filter="safe" aria-pressed="false">正常</button>
+        </div>
+        <label class="field compact">
+          <span>类别</span>
+          <select id="categoryFilter">
+            <option value="all">全部类别</option>
+          </select>
+        </label>
+        <label class="field compact search-field">
+          <span class="sr-only">关键词搜索</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12Zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm5.3 8.9 4.4 4.4-1.4 1.4-4.4-4.4 1.4-1.4Z"/></svg>
+          <input id="searchInput" type="search" placeholder="搜索 id / 原文 / 理由…" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="sample-list" id="sampleList" aria-live="polite"></div>
+
+      <div class="pager" id="pager" hidden>
+        <button class="btn sm" id="prevPage" type="button">← 上一页</button>
+        <span class="page-info" id="pageInfo"></span>
+        <button class="btn sm" id="nextPage" type="button">下一页 →</button>
+      </div>
+    </section>
+
+    <!-- ============ 单条体验 ============ -->
+    <section class="panel" id="moderatePanel" aria-labelledby="moderateTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="moderateTitle">单条体验</h2>
+          <p class="hint" id="moderateProviderHint">输入任意文本，直接调用 /api/moderate 查看审核输出</p>
+        </div>
+      </div>
+
+      <div class="moderate-grid">
+        <div class="moderate-input">
+          <label class="sr-only" for="moderateText">待审核文本</label>
+          <textarea id="moderateText" rows="5" maxlength="2000" placeholder="输入待审核的中文文本… 例如：你这个人真是无可救药。（Ctrl / ⌘ + Enter 快速审核）"></textarea>
+          <div class="moderate-bar">
+            <span class="counter" id="moderateCounter">0 / 2000</span>
+            <div class="spacer"></div>
+            <button class="btn ghost sm" id="moderateClear" type="button">清空</button>
+            <button class="btn primary" id="moderateBtn" type="button">审核</button>
+          </div>
+        </div>
+        <div class="verdict-wrap">
+          <div class="state-box small" id="verdictEmpty">输入文本后点击「审核」，结果会显示在这里。</div>
+          <div id="verdictCard" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="taxonomy" id="taxonomyLegend" aria-label="分类体系"></div>
+          </footer>
+  </main>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div class="noscript">此页面需要启用 JavaScript 才能加载跑分数据与图表。</div>
+  </noscript>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

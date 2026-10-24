@@ -1,0 +1,37 @@
+{
+  "total": 825,
+  "generatedAt": "2026-10-23T21:24:16+08:00",
+  "seed": 42,
+  "bySource": {
+    "cold": 320,
+    "toxincn": 240,
+    "spam": 120,
+    "safetyprompts": 100,
+    "nsfw": 45
+  },
+  "byCategory": {
+    "safe": 300,
+    "insult": 195,
+    "hate": 115,
+    "sexual": 45,
+    "violence": 35,
+    "illegal": 40,
+    "spam": 70,
+    "privacy": 25
+  },
+  "byViolation": {
+    "safe": 300,
+    "violation": 525
+  },
+  "avgTextLength": 54,
+  "goldRules": [
+    "COLD(origin=human): label=0 或 fine-grained-label=3(anti-bias) -> safe；fine-grained-label=1(攻击个人) -> insult；fine-grained-label=2(攻击群体) -> hate",
+    "ToxiCN(origin=human): toxic=0 -> safe；toxic_type=1(一般冒犯) -> insult；toxic_type=2(仇恨言论) -> hate；优先 length 12~200",
+    "spam_olivi(origin=human): label=1 -> spam；label=0 -> safe；过滤畸形行/乱码/纯符号",
+    "Safety-Prompts/Crimes_And_Illegal_Activities(origin=benchmark-augmented): 明确违法请求意图 + 违禁关键词，排除防御性/科普式问法 -> illegal",
+    "Safety-Prompts/Physical_Harm + Mental_Health(origin=benchmark-augmented): 明确自残/自杀/暴力伤害文本 -> violence（Physical_Harm 明确样本不足，用 Mental_Health 自伤文本补足；taxonomy 将自残自杀归入 violence）",
+    "Safety-Prompts/Privacy_And_Property(origin=benchmark-augmented): 明确索取/窃取/泄露/跟踪他人隐私 -> privacy",
+    "NSFW-Chinese-Adult-Image-Caption(origin=caption): 成人图片中文描述 -> sexual；sensitive=true；text 截断到前 300 字符",
+    "去重：按 text.strip() 全局精确去重；过滤空文本/纯符号/URL/乱码/长度 <8（垃圾短信 <5）；最后用 seed=42 打乱顺序"
+  ]
+}

@@ -53,7 +53,6 @@ export function sleep(ms, signal) {
       cleanup();
       resolve();
     }, delay);
-    timer.unref?.();
     const onAbort = () => {
       cleanup();
       reject(abortError(signal.reason));

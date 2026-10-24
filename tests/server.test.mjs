@@ -462,6 +462,9 @@ test('POST /api/benchmark + 轮询 + 结果与指标自洽（mock）', async () 
   const list = await getJson('/api/results');
   assert.equal(list.res.status, 200);
   assert.equal(list.body.total, 1);
+  assert.equal(list.body.page, 1);
+  assert.equal(list.body.pageSize, 10);
+  assert.equal(list.body.totalPages, 1);
   assert.equal(list.body.runs.length, 1);
   const summary = list.body.runs[0];
   assert.equal(summary.runId, firstRunId);
@@ -581,10 +584,65 @@ test('第二次跑分：runId 不冲突，latest 指向新结果', async () => {
   assert.equal(list.body.runs[0].runId, createBody.runId);
   assert.equal(list.body.runs[1].runId, firstRunId);
   assert.equal(list.body.runs[0].sampleCount, 3);
+  assert.equal(list.body.latestResultId, createBody.runId);
+
+  // 分页：每页 1 条，共 2 页；超出范围时夹到最后一页
+  const page2 = await getJson('/api/results?page=2&pageSize=1');
+  assert.equal(page2.body.total, 2);
+  assert.equal(page2.body.page, 2);
+  assert.equal(page2.body.pageSize, 1);
+  assert.equal(page2.body.totalPages, 2);
+  assert.deepEqual(page2.body.runs.map((run) => run.runId), [firstRunId]);
+  const clamped = await getJson('/api/results?page=99&pageSize=1');
+  assert.equal(clamped.body.page, 2);
+  assert.deepEqual(clamped.body.runs.map((run) => run.runId), [firstRunId]);
 
   const config = await getJson('/api/config');
   assert.equal(config.body.latestResultId, createBody.runId);
 
   const health = await getJson('/api/health');
   assert.equal(health.body.hasResults, true);
+});
+
+test('DELETE /api/results/:runId：删除记录并回退 latest', async () => {
+  const before = await getJson('/api/results?pageSize=10');
+  assert.equal(before.body.total, 2);
+  const latestId = before.body.runs[0].runId;
+  const olderId = before.body.runs[1].runId;
+
+  const delLatest = await fetch(`${baseUrl}/api/results/${latestId}`, { method: 'DELETE' });
+  assert.equal(delLatest.status, 200);
+  const delBody = await delLatest.json();
+  assert.equal(delBody.ok, true);
+  assert.equal(delBody.latestResultId, olderId);
+
+  const latest = await getJson('/api/results/latest');
+  assert.equal(latest.body.runId, olderId);
+  const list = await getJson('/api/results');
+  assert.equal(list.body.total, 1);
+  assert.equal(list.body.runs[0].runId, olderId);
+  const config = await getJson('/api/config');
+  assert.equal(config.body.latestResultId, olderId);
+
+  // 重复删除 / 非法 runId / 不存在记录
+  const delAgain = await fetch(`${baseUrl}/api/results/${latestId}`, { method: 'DELETE' });
+  assert.equal(delAgain.status, 404);
+  const delLatestAlias = await fetch(`${baseUrl}/api/results/latest`, { method: 'DELETE' });
+  assert.equal(delLatestAlias.status, 400);
+  const delMissing = await fetch(`${baseUrl}/api/results/bench-19990101-000000`, { method: 'DELETE' });
+  assert.equal(delMissing.status, 404);
+
+  // 删除最后一条：latest.json 移除，hasResults=false
+  const delOlder = await fetch(`${baseUrl}/api/results/${olderId}`, { method: 'DELETE' });
+  assert.equal(delOlder.status, 200);
+  const delOlderBody = await delOlder.json();
+  assert.equal(delOlderBody.latestResultId, null);
+  const emptyLatest = await getJson('/api/results/latest');
+  assert.equal(emptyLatest.body, null);
+  const emptyList = await getJson('/api/results');
+  assert.equal(emptyList.body.total, 0);
+  assert.equal(emptyList.body.totalPages, 1);
+  assert.equal(emptyList.body.runs.length, 0);
+  const health = await getJson('/api/health');
+  assert.equal(health.body.hasResults, false);
 });

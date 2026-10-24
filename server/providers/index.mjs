@@ -5,7 +5,7 @@
 // 区别只在 endpoint / API Key / 模型名：
 //   - systemone  : 百炼「决策模型（预览版）」decision-model-preview（workspace 专属域名）
 //   - bamboonode : https://api.bamboonode.dev/v1/systemone，模型 startlux-decision-27b-autothink
-//   - jev        : https://jevmodel.org/v1/systemone，模型 jev-preview(1.14) / jev-latest(1.13)
+//   - jev        : https://api.typesafe.ai/v1/systemone，模型 jev-preview(1.14) / jev-latest(1.13)
 //   - mock       : 本地规则模拟，永远标注 simulated
 import { createSystemOneProvider, DEFAULT_MODEL as SYSTEMONE_MODEL, DEFAULT_TIMEOUT_MS } from './systemone.mjs';
 import { createMockProvider } from './mock.mjs';

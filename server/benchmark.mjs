@@ -347,6 +347,58 @@ export function readResult(runId, resultsDir = getConfig().resultsDir) {
 }
 
 /**
+ * 删除一条历史跑分。
+ * - 校验 runId，避免路径穿越；
+ * - 若删除的是 latest.json 指向的记录，自动把 latest 回退到剩余最新一条（没有则删除 latest.json）。
+ * @returns {{deleted:boolean, latestResultId:string|null, latestUpdated:boolean}}
+ */
+export function deleteResult(runId, resultsDir = getConfig().resultsDir) {
+  assertSafeRunId(runId);
+  const dir = resultsDir || getConfig().resultsDir;
+  const filePath = path.join(dir, `${runId}.json`);
+  const latestPath = path.join(dir, 'latest.json');
+
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      const latest = readLatestResult(dir);
+      return { deleted: false, latestResultId: latest?.runId ?? null, latestUpdated: false };
+    }
+    throw error;
+  }
+
+  let latestResultId = readLatestResult(dir)?.runId ?? null;
+  let latestUpdated = false;
+  if (latestResultId === runId) {
+    const remaining = listResults(dir, { limit: 0 });
+    let next = null;
+    for (const run of remaining) {
+      try {
+        next = readResult(run.runId, dir);
+        break;
+      } catch {
+        // 损坏文件跳过，继续找下一条可读结果
+      }
+    }
+    if (next) {
+      atomicWriteFile(latestPath, JSON.stringify(next, null, 2));
+      latestResultId = next.runId;
+    } else {
+      try {
+        fs.unlinkSync(latestPath);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+      latestResultId = null;
+    }
+    latestUpdated = true;
+  }
+
+  return { deleted: true, latestResultId, latestUpdated };
+}
+
+/**
  * 列出历史跑分（只返回摘要，不加载 records），按结束时间倒序。
  * 用于前端「跑分记录 / 多模型对比」；损坏/非跑分 JSON 会跳过。
  */

@@ -1,8 +1,8 @@
 # 跑分报告：决策模型内容审核 —— 速度与准确率
 
-> 被测服务：阿里云百炼 **决策模型（预览版）** `decision-model-preview`（TypeSafe System One 协议）；扩展对比 BambooNode 网关 **StartLux** `startlux-decision-27b-autothink`；Jev 官方网关 `jev-preview` 已接入（Key 待验证）
+> 被测服务：阿里云百炼 **决策模型（预览版）** `decision-model-preview`（TypeSafe System One 协议）；扩展对比 BambooNode 网关 **StartLux** `startlux-decision-27b-autothink`、Jev / TypeSafe 官方网关 `jev-preview`
 > 评测集：**825 条**带金标中文样本（违规 63.6%），5 个公开来源，`seed=42` 可复现
-> 跑分日期：2026-10-23 · 环境：macOS / Node v24.19 · 地域 cn-beijing
+> 跑分日期：2026-10-23（百炼 / StartLux）、2026-10-24（Jev）· 环境：macOS / Node v24.19 · 地域 cn-beijing
 
 ## 0. 结论速览（TL;DR）
 
@@ -18,7 +18,7 @@
 
 **一句话**：百炼决策模型把「单条审核」压缩到**几十毫秒级**、结构化输出零解析失败，适合做高吞吐的一审；但中文**隐晦辱骂/仇恨、谐音垃圾广告、含蓄色情描述**的召回明显偏弱（hate F1 0.23、spam F1 0.33），且 **confidence 未校准**（判错样本的中位置信度仍有 0.94），不能直接拿置信度做人工分流。
 
-**跨模型补充（同为 825 条，2026-10-23）**：BambooNode 的 **StartLux** `startlux-decision-27b-autothink` 准确率 **83.8%** / F1 **0.874**，比百炼 **+10.6pt / +10.0pt**，尤其 hate、spam 两类大幅补强；代价是 p50 **1533ms（×11.8）**、吞吐 **1.58 req/s（÷7.0）**。Jev 官方网关 `jev-preview` 已接入（provider=`jev`），本次环境 Key 返回 401，结果待补。
+**跨模型补充（同为 825 条）**：BambooNode 的 **StartLux** `startlux-decision-27b-autothink` 准确率 **83.8%** / F1 **0.874**，比百炼 **+10.6pt / +10.0pt**，尤其 hate、spam 两类大幅补强；代价是 p50 **1533ms（×11.8）**、吞吐 **1.58 req/s（÷7.0）**。Jev `jev-preview`（2026-10-24 补测）准确率 **79.9%** / F1 **0.851**、召回率 **90.3%** 为三者最高；P50 313ms、P95 仅 359ms、吞吐 **12.46 req/s** 为三者最高。
 
 ## 1. 被测服务与调用方式
 
@@ -30,7 +30,7 @@
 - 输出是结构化概率 + 置信度，不需要解析自然语言，**parseFail 可以做到 0**；
 - 百炼决策模型输入 token 当前免费，RPM 1200 / TPM 2,000,000，适合批量跑分与在线一审。
 
-普通 OpenAI 兼容 chat 模型在百炼 Key 下会被限流（429）或权限拒绝，且需要生成 JSON、解析失败率不可控，因此不用于主对比。当前提供四个 provider：`systemone`（百炼）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`mock`（离线演示）；三者协议相同，仅 endpoint / Key / 模型名不同。前端按 `providerModels` 做 Provider→Model 级联，后端对跨 provider 的模型组合直接返回 400。
+普通 OpenAI 兼容 chat 模型在百炼 Key 下会被限流（429）或权限拒绝，且需要生成 JSON、解析失败率不可控，因此不用于主对比。当前提供四个 provider：`systemone`（百炼）、`bamboonode`（StartLux）、`jev`（Jev / TypeSafe 官方网关）、`mock`（离线演示）；三个真实服务协议相同，仅 endpoint / Key / 模型名不同。前端按 `providerModels` 做 Provider→Model 级联，后端对跨 provider 的模型组合直接返回 400。
 
 ### 1.2 接口与请求结构
 
@@ -181,6 +181,24 @@ else: safe
 
 **结论**：StartLux 用约 **7 倍的墙钟时间 / 11.8 倍的 p50 延迟**，换来 **+10.6pt 准确率、+16.0pt 召回率**；如果业务更怕漏判（审核一审），这个交换通常值得；如果要求毫秒级高吞吐，百炼决策模型仍明显更合适。
 
+### 3.6 三方补充：Jev `jev-preview`（全量 825 条，并发 4，2026-10-24）
+
+运行 ID：`bench-20261024-100451`（`results/bench-20261024-100451.json`，provider=`jev`，model=`jev-preview`，网关 `https://api.typesafe.ai/v1`）。
+
+| 指标 | Jev `jev-preview` |
+| --- | --- |
+| 准确率 / 精确率 / 召回率 / F1 | **79.9% / 80.5% / 90.3% / 0.851** |
+| TP / TN / FP / FN | 474 / 185 / 115 / 51 |
+| 解析失败 / 调用错误 | 0 / 0 |
+| 端到端 p50 / p95 / p99 | **313ms / 359ms / 437ms** |
+| 吞吐（c=4） / 825 条总耗时 | **12.46 req/s / 66.2s** |
+| input tokens（平均/条） | 941,054（1,141/条） |
+
+- **质量**：准确率与 F1 介于 StartLux 和百炼之间；召回率 90.3% 为三者最高，但 FP 115 也高于 StartLux 的 72，属于更保守的「宁可错杀」取向。
+- **速度**：P50 313ms 约为百炼的 2.4 倍、StartLux 的 1/4.9；但 P95 仅 359ms，显著优于百炼的 1.94s 与 StartLux 的 7.98s，吞吐 12.46 req/s 为三者最高——短文本高并发场景非常合适。
+- **分类别 F1**：insult 0.682、hate 0.525、sexual 0.791、violence 0.781、illegal 0.822、spam 0.828、privacy 0.650；sexual 为三者最高，hate/spam 略低于 StartLux。
+- `jev-latest`（1.13 stable）已配置但本次未跑；可执行 `node scripts/benchmark.mjs --provider jev --model jev-latest --concurrency 4` 补测。
+
 ## 4. 速度结果
 
 ### 4.1 延迟分布（n=825，并发 4）
@@ -222,16 +240,18 @@ else: safe
 - 825 条共 **473,090 input tokens**（completion 为 0，因为决策模型不生成文本），平均 **573 tokens/条**；
 - 按官方文档当前输入 token 价格为 0，本次跑分**成本为 0**（以控制台账单为准）；若未来计费，按 573 tokens/条估算即可。
 
-### 4.5 外部决策模型速度（StartLux，n=825，并发 4）
+### 4.5 外部决策模型速度（StartLux / Jev，n=825，并发 4）
 
 | 口径 | mean | p50 | p90 | p95 | p99 | max |
 | --- | --- | --- | --- | --- | --- | --- |
 | StartLux 端到端 | 2.50s | **1.53s** | 6.30s | 7.98s | 12.18s | 27.6s |
+| Jev `jev-preview` 端到端 | 0.32s | 0.31s | 0.34s | **0.36s** | **0.44s** | **0.63s** |
 | 百炼决策模型（对照） | 0.35s | **0.13s** | 0.16s | 1.94s | 5.21s | 10.6s |
 
 - 网关侧没有返回 `latency_ms`，所以这些全是客户端端到端延迟；p50 约 **1.5s** 说明主要成本在网关排队/网络/模型推理，而不是本机；
-- 825 条并发 4 总耗时 **521s（8.7 分钟）**、吞吐 **1.58 req/s**；p95 达 8s，说明该网关的尾延迟明显比百炼差，生产使用时需要更长的超时与重试预算；
-- 同样的 4 问 + 阈值配置下 tokens 平均 848/条（百炼 573/条），因为网关把 state 与问题按不同模板计入 input tokens。
+- StartLux 825 条并发 4 总耗时 **521s（8.7 分钟）**、吞吐 **1.58 req/s**；p95 达 8s。
+- Jev 总耗时 **66.2s**、吞吐 **12.46 req/s**，p95 仅 359ms，尾延迟显著优于 StartLux 与百炼；平均 1,141 tokens/条为三者最高。
+- 同样的 4 问 + 阈值配置下 tokens：StartLux 平均 848/条、百炼 573/条，因网关模板不同。
 
 ## 5. 错误分析
 
@@ -320,12 +340,13 @@ Web 端：`npm start` 后打开 <http://127.0.0.1:8788>，选择「全部 / 并�
 | --- | --- |
 | `results/bench-20261023-224344.json` | **全量 825 条，ensemble，并发 4**（百炼主结果） |
 | `results/bench-20261023-233543.json` | **全量 825 条，StartLux（bamboonode），并发 4**（跨模型对比） |
+| `results/bench-20261024-100451.json` | **全量 825 条，Jev `jev-preview`，并发 4**（2026-10-24 补测） |
 | `results/bench-20261023-223943.json` | 同配置重复跑（准确率完全一致，用于验证可复现性/延迟抖动） |
 | `results/bench-20261023-224059.json` | 200 条，并发 1（速度曲线） |
 | `results/bench-20261023-224149.json` | 200 条，并发 2（速度曲线） |
 | `results/bench-20261023-224258.json` | 200 条，并发 4，ensemble（消融） |
 | `results/bench-20261023-224316.json` | 200 条，并发 4，pure argmax（消融） |
 | `results/bench-20261023-224233.json` | 200 条，并发 8（速度曲线） |
-| `results/latest.json` | 最近一次跑分（当前为 StartLux `bench-20261023-233543`，Web 端默认展示） |
+| `results/latest.json` | 最近一次跑分（当前为 Jev `bench-20261024-100451`，Web 端默认展示） |
 
 每条记录包含原文、金标、预测、`correct`/`categoryHit`、`latencyMs`、`tokens`、`raw`（含完整概率与 request_id），可直接复核。

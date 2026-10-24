@@ -82,12 +82,12 @@ test('createProvider：jev 使用官方网关 key / endpoint / 模型', () => {
   const provider = createProvider({
     provider: 'jev',
     apiKey: 'jevm-test',
-    baseUrl: 'https://jevmodel.org/v1',
+    baseUrl: 'https://api.typesafe.ai/v1',
     model: 'jev-preview',
   });
   assert.equal(provider.name, 'jev');
   assert.equal(provider.model, 'jev-preview');
-  assert.equal(provider.endpoint, 'https://jevmodel.org/v1/systemone');
+  assert.equal(provider.endpoint, 'https://api.typesafe.ai/v1/systemone');
   assert.equal(provider.simulated, false);
 });
 

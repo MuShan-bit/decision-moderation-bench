@@ -47,7 +47,7 @@ test('getConfig：默认值', () => {
   assert.equal(cfg.bamboonodeBaseUrl, 'https://api.bamboonode.dev/v1');
   assert.deepEqual(cfg.bamboonodeModels, ['startlux-decision-27b-autothink']);
   assert.equal(cfg.bamboonodeApiKeyConfigured, false);
-  assert.equal(cfg.jevBaseUrl, 'https://jevmodel.org/v1');
+  assert.equal(cfg.jevBaseUrl, 'https://api.typesafe.ai/v1');
   assert.deepEqual(cfg.jevModels, ['jev-preview', 'jev-latest']);
   assert.equal(cfg.jevApiKeyConfigured, false);
 });
@@ -99,13 +99,13 @@ test('getConfig：jev 官方网关 key / provider 回退', () => {
   const cfg = getConfig({
     MODERATION_PROVIDER: 'jev',
     JEVMODEL_API_KEY: 'jevm-test-key',
-    JEVMODEL_BASE_URL: 'https://jevmodel.org/v1/',
+    JEVMODEL_BASE_URL: 'https://api.typesafe.ai/v1/',
     JEVMODEL_MODELS: 'jev-latest',
   });
   assert.equal(cfg.provider, 'jev');
   assert.equal(cfg.effectiveProvider, 'jev');
   assert.equal(cfg.jevApiKeyConfigured, true);
-  assert.equal(cfg.jevBaseUrl, 'https://jevmodel.org/v1');
+  assert.equal(cfg.jevBaseUrl, 'https://api.typesafe.ai/v1');
   assert.deepEqual(cfg.jevModels, ['jev-latest']);
 
   const fallback = getConfig({ MODERATION_PROVIDER: 'jev' });

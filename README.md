@@ -12,16 +12,16 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white"></a>
   <a href="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml"><img alt="tests workflow" src="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml/badge.svg"></a>
-  <img alt="Node.js >= 20" src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white">
+  <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20%2B-339933">
   <img alt="dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <img alt="tests: 57 passed" src="https://img.shields.io/badge/tests-57%20passed-brightgreen">
+  <img alt="tests: 58 passed" src="https://img.shields.io/badge/tests-58%20passed-brightgreen">
   <img alt="providers: systemone / bamboonode / jev / mock" src="https://img.shields.io/badge/providers-systemone%20%7C%20bamboonode%20%7C%20jev%20%7C%20mock-5eead4">
   <a href="https://github.com/MuShan-bit/decision-moderation-bench"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-decision--moderation--bench-181717?logo=github"></a>
 </p>
 
 一个可运行的**多模型中文内容审核跑分平台**：自带 **825 条带金标评测集**、深色 Web 控制台（跑分 / 历史记录 / 模型对比 / 样本浏览器 / 单条体验）、CLI 跑分器和完整评测报告。
 
-真实调用 TypeSafe **System One / typed-decision** 决策模型（百炼 `decision-model-preview`、BambooNode `startlux-decision-27b-autothink`，并已接入 Jev 官方网关），同一批样本、同一套决策逻辑下横向对比**准确率、F1、延迟与吞吐**；零 npm 运行时依赖，离线可用 mock provider 演示。
+真实调用 TypeSafe **System One / typed-decision** 决策模型（百炼 `decision-model-preview`、BambooNode `startlux-decision-27b-autothink`、Jev `jev-preview`），同一批样本、同一套决策逻辑下横向对比**准确率、F1、延迟与吞吐**；零 npm 运行时依赖，离线可用 mock provider 演示。
 
 > 完整方法论、消融、错误分析与复现命令见 **[REPORT.md](REPORT.md)**；接口与数据结构契约见 **[docs/CONTRACT.md](docs/CONTRACT.md)**。
 
@@ -30,7 +30,7 @@
 - **多 Provider，同一套协议**：`systemone`（百炼）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`mock`（离线规则模拟）
 - **Provider → Model 级联**：前端只展示当前 provider 可用的模型，后端对跨 provider 的模型组合直接返回 `400 MODEL_NOT_ALLOWED`
 - **可复现评测集**：5 个公开中文数据集、固定 `seed=42`、金标全部来自原始标签映射，数据统计与局限见 [data/README.md](data/README.md)
-- **跑分记录按模型分组**：每次跑分独立保存为 `results/<runId>.json`，不再只保留最新一次
+- **跑分记录按模型分组 + 分页 / 删除**：每次跑分独立保存为 `results/<runId>.json`，每页 6 条，可翻页查看或删除；删除 latest 会自动回退到上一条
 - **模型对比视图**：勾选 2–6 条记录，并排比较质量指标、P50/P95、吞吐、分类别 F1；样本数/并发不同会自动提示不可直接比较
 - **完整可视化**：准确率/P/R/F1、延迟直方图、混淆矩阵、分类别 F1、来源细分、逐条样本浏览器、单条文本体验
 - **零依赖**：后端 `node:http` + 全局 `fetch`，前端原生 HTML/CSS/JS + 内联 SVG 图表；无 CDN、无构建步骤
@@ -46,7 +46,7 @@
 
 ![跑分控制](docs/assets/run-controls.png)
 
-### 跑分记录（按模型分组）
+### 跑分记录（按模型分组，支持分页与删除）
 
 ![跑分记录](docs/assets/history.png)
 
@@ -80,31 +80,32 @@
 
 ## 📊 模型测评结果
 
-评测条件：**825 条**中文带金标样本（违规 63.6%）、并发 **4**、同一套「4 问 + 阈值」决策逻辑、2026-10-23 实测。
+评测条件：**825 条**中文带金标样本（违规 63.6%）、并发 **4**、同一套「4 问 + 阈值」决策逻辑；百炼与 StartLux 于 2026-10-23 实测，Jev 于 2026-10-24 补测。
 
 | 模型 | Provider | 准确率 | 精确率 | 召回率 | F1 | P50 延迟 | P95 延迟 | 吞吐 | 825 条总耗时 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `decision-model-preview` | 百炼 `systemone` | 73.2% | 83.5% | 72.2% | 0.774 | **130ms** | **1.94s** | **11.03 req/s** | **74.8s** |
-| `startlux-decision-27b-autothink` | BambooNode `bamboonode` | **83.8%** | **86.5%** | **88.2%** | **0.874** | 1.53s | 7.98s | 1.58 req/s | 8m41s |
-| `jev-preview` / `jev-latest` | Jev 官方 `jev` | 已接入 | — | — | — | — | — | — | 本次环境 Key 返回 `401`，待补 |
+| `decision-model-preview` | 百炼 `systemone` | 73.2% | 83.5% | 72.2% | 0.774 | **130ms** | 1.94s | 11.03 req/s | 74.8s |
+| `startlux-decision-27b-autothink` | BambooNode `bamboonode` | **83.8%** | **86.5%** | 88.2% | **0.874** | 1.53s | 7.98s | 1.58 req/s | 8m41s |
+| `jev-preview` | Jev / TypeSafe `jev` | 79.9% | 80.5% | **90.3%** | 0.851 | 313ms | **359ms** | **12.46 req/s** | **66.2s** |
 
-- **StartLux 质量更高**：准确率 **+10.6pt**、F1 **+10.0pt**、召回率 **+16.0pt**，尤其补强了百炼最弱的 hate（F1 0.228 → 0.550）与 spam（0.326 → 0.875）。
-- **百炼速度快一个数量级**：P50 **130ms vs 1.53s（×11.8）**，吞吐 **11.03 vs 1.58 req/s（÷7.0）**，更适合高吞吐一审。
-- 解析失败与调用错误均为 **0**；tokens：百炼 473,090（573/条），StartLux 699,963（848/条）。
+- **StartLux 质量最高**：准确率 **83.8%**、F1 **0.874**，比百炼 **+10.6pt / +10.0pt**，尤其补强了百炼最弱的 hate（F1 0.228 → 0.550）与 spam（0.326 → 0.875）。
+- **Jev 召回率最高、综合最均衡**：准确率 79.9%、F1 0.851，介于 StartLux 与百炼之间；召回率 **90.3%** 为三者最高，误杀（FP 115）高于 StartLux（72）。
+- **速度呈现三种取舍**：百炼 P50 最快（130ms），但 P95 1.94s、吞吐 11.03 req/s；Jev P50 313ms、**P95 仅 359ms**、吞吐 **12.46 req/s** 为三者最高；StartLux P50 1.53s、P95 7.98s、吞吐 1.58 req/s。
+- 解析失败与调用错误均为 **0**；tokens：百炼 473,090（573/条），StartLux 699,963（848/条），Jev 941,054（1,141/条）。
 - 200 条样本档复测：百炼 ensemble **73.5%**、StartLux **85.0%**，与全量结论一致；百炼纯 argmax 仅 **61.5%**（消融详见报告）。
-- Jev 官方网关已支持 `provider=jev` 与模型别名 `jev-preview` / `jev-latest`，但当前环境的 `JEVMODEL_API_KEY` 被官方网关拒绝（`401 Missing or invalid API key`），因此不列结果；换有效 Key 后执行 `node scripts/benchmark.mjs --provider jev --model jev-preview --concurrency 4` 即可补齐。
+- Jev 本次使用 `jev-preview`（1.14）跑全量；`jev-latest`（1.13 stable）已配置但未跑，可用 `node scripts/benchmark.mjs --provider jev --model jev-latest --concurrency 4` 补测。
 
 ### 分类别 F1 对比（825 条）
 
-| 类别 | 支持数 | 百炼 `decision-model-preview` | StartLux | 提升 |
+| 类别 | 支持数 | 百炼 `decision-model-preview` | StartLux | Jev `jev-preview` |
 | --- | ---: | ---: | ---: | ---: |
-| 辱骂攻击 insult | 195 | 0.639 | **0.724** | +0.085 |
-| 歧视仇恨 hate | 115 | 0.228 | **0.550** | **+0.322** |
-| 色情低俗 sexual | 45 | 0.714 | **0.774** | +0.060 |
-| 暴力血腥 violence | 35 | **0.879** | 0.790 | −0.089 |
-| 违法犯罪 illegal | 40 | 0.804 | **0.854** | +0.050 |
-| 广告垃圾 spam | 70 | 0.326 | **0.875** | **+0.549** |
-| 隐私侵权 privacy | 25 | 0.571 | **0.714** | +0.143 |
+| 辱骂攻击 insult | 195 | 0.639 | **0.724** | 0.682 |
+| 歧视仇恨 hate | 115 | 0.228 | **0.550** | 0.525 |
+| 色情低俗 sexual | 45 | 0.714 | 0.774 | **0.791** |
+| 暴力血腥 violence | 35 | **0.879** | 0.790 | 0.781 |
+| 违法犯罪 illegal | 40 | 0.804 | **0.854** | 0.822 |
+| 广告垃圾 spam | 70 | 0.326 | **0.875** | 0.828 |
+| 隐私侵权 privacy | 25 | 0.571 | **0.714** | 0.650 |
 
 > 数据口径：金标来自公开数据集原生标签映射，并非独立人工复核；违规比例 63.6% 高于真实业务，准确率不能直接外推到线上。详见 [REPORT.md](REPORT.md) 与 [data/README.md](data/README.md)。
 
@@ -138,8 +139,8 @@ npm start
 | `BAMBOONODE_API_KEY` | 跑 `bamboonode` 必填 | BambooNode 网关 Key |
 | `BAMBOONODE_BASE_URL` | 否 | 默认 `https://api.bamboonode.dev/v1` |
 | `BAMBOONODE_MODELS` | 否 | 默认 `startlux-decision-27b-autothink`（逗号分隔） |
-| `JEVMODEL_API_KEY` | 跑 `jev` 必填 | Jev 官方网关 Key（<https://jevmodel.org/dashboard/> 创建） |
-| `JEVMODEL_BASE_URL` | 否 | 默认 `https://jevmodel.org/v1` |
+| `JEVMODEL_API_KEY` | 跑 `jev` 必填 | Jev / TypeSafe 官方网关 Key |
+| `JEVMODEL_BASE_URL` | 否 | 默认 `https://api.typesafe.ai/v1` |
 | `JEVMODEL_MODELS` | 否 | 默认 `jev-preview,jev-latest` |
 | `MODERATION_PROVIDER` | 否 | 默认 `systemone`；可选 `systemone` / `bamboonode` / `jev` / `mock` |
 | `MODERATION_MODEL` | 否 | 默认 `decision-model-preview` |
@@ -196,9 +197,10 @@ node scripts/benchmark.mjs --provider systemone --limit 200 --pure
 | GET | `/api/dataset?offset=&limit=&filter=&category=&q=` | 数据集分页/过滤/搜索 |
 | POST | `/api/benchmark` | 创建跑分任务（202 + runId） |
 | GET | `/api/benchmark/:runId` | 查询任务进度/状态 |
-| GET | `/api/results` | 历史跑分摘要列表（按结束时间倒序） |
+| GET | `/api/results?page=&pageSize=` | 历史跑分分页摘要列表（按结束时间倒序，默认每页 10 条） |
 | GET | `/api/results/latest` | 最新一次完整结果 |
 | GET | `/api/results/:runId` | 指定跑分完整结果 |
+| DELETE | `/api/results/:runId` | 删除一条跑分；删除 latest 时自动回退 |
 | GET | `/api/results/:runId/export.csv` | 导出 CSV |
 | POST | `/api/moderate` | 单条文本审核 |
 
@@ -226,7 +228,7 @@ node scripts/benchmark.mjs --provider systemone --limit 200 --pure
 │   └── raw/                # 上游原始数据（不入库）
 ├── results/                # 跑分结果（*.json 不入库）
 ├── docs/                   # 契约 + 截图
-├── tests/                  # node:test（57 个）
+├── tests/                  # node:test（58 个）
 ├── REPORT.md               # 完整评测报告
 ├── LICENSE                 # MIT
 └── package.json
@@ -235,10 +237,10 @@ node scripts/benchmark.mjs --provider systemone --limit 200 --pure
 ## ✅ 测试
 
 ```bash
-npm test          # node --test tests/  → 57 个测试
+npm test          # node --test tests/  → 58 个测试
 ```
 
-覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、历史结果摘要、静态资源与路径穿越防护。
+覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、历史结果摘要/分页/删除、静态资源与路径穿越防护。
 
 ## 🧠 设计说明
 
@@ -251,7 +253,7 @@ npm test          # node --test tests/  → 57 个测试
 
 - StartLux 的 P50 约 1.5s、P95 约 8s，明显慢于百炼决策模型，生产使用时需更长超时与重试预算；
 - 评测集是公开数据集的标签映射，不是独立人工复核；类别定义与真实业务存在差异；
-- Jev 官方网关本次因 Key 无效未取得结果；
+- Jev 仅跑了 `jev-preview`，`jev-latest` 未跑；
 - 当前是单机 Demo 定位，未包含登录、多租户、任务队列与限流等生产化能力。
 
 ## 📄 License

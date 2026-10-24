@@ -18,9 +18,9 @@ export const CONCURRENCY_OPTIONS = Object.freeze([1, 2, 4, 8, 16]);
 export const DEFAULT_BAMBOONODE_BASE_URL = 'https://api.bamboonode.dev/v1';
 export const DEFAULT_BAMBOONODE_MODELS = Object.freeze(['startlux-decision-27b-autothink']);
 
-// Jev 官方网关（TypeSafe System One）：POST https://jevmodel.org/v1/systemone
-// 模型：jev-preview（1.14.0，最新）/ jev-latest（1.13.0，stable）；Key 在 jevmodel.org Dashboard 创建。
-export const DEFAULT_JEVMODEL_BASE_URL = 'https://jevmodel.org/v1';
+// Jev / TypeSafe 官方网关（System One 协议）：POST https://api.typesafe.ai/v1/systemone
+// 模型：jev-preview（1.14.0，最新）/ jev-latest（1.13.0，stable）。
+export const DEFAULT_JEVMODEL_BASE_URL = 'https://api.typesafe.ai/v1';
 export const DEFAULT_JEVMODEL_MODELS = Object.freeze(['jev-preview', 'jev-latest']);
 
 /** 极简 dotenv 解析：支持注释、引号、行内 # 注释 */

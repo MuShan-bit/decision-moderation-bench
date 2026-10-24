@@ -25,6 +25,7 @@ import {
   readResult,
   readLatestResult,
   listResults,
+  deleteResult,
   hasLatestResult,
   resultToCsv,
   MAX_CONCURRENCY,
@@ -360,15 +361,51 @@ function handleDataset(req, res, url) {
   });
 }
 
-function handleResultsList(req, res) {
+function clampInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function handleResultsList(req, res, url) {
   const cfg = getConfig();
   let runs = [];
   try {
-    runs = listResults(cfg.resultsDir);
+    runs = listResults(cfg.resultsDir, { limit: 0 });
   } catch (error) {
     throw new HttpError(500, `读取跑分记录失败：${error.message}`, 'RESULT_LIST_ERROR');
   }
-  sendJson(res, 200, { total: runs.length, runs });
+  const pageSize = clampInt(url.searchParams.get('pageSize'), 10, 1, 50);
+  const total = runs.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(clampInt(url.searchParams.get('page'), 1, 1, Number.MAX_SAFE_INTEGER), totalPages);
+  const start = (page - 1) * pageSize;
+  sendJson(res, 200, {
+    total,
+    page,
+    pageSize,
+    totalPages,
+    latestResultId: latestResultId(cfg),
+    runs: runs.slice(start, start + pageSize),
+  });
+}
+
+function handleDeleteResult(req, res, runId) {
+  const cfg = getConfig();
+  try {
+    const info = deleteResult(runId, cfg.resultsDir);
+    if (!info.deleted) throw new HttpError(404, `结果不存在：${runId}`, 'RESULT_NOT_FOUND');
+    latestResultCache.mtimeMs = -1;
+    latestResultCache.size = -1;
+    latestResultCache.runId = null;
+    sendJson(res, 200, { ok: true, runId, latestResultId: info.latestResultId ?? null });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    if (String(error?.message || '').startsWith('非法的 runId')) {
+      throw new HttpError(400, error.message, 'INVALID_RUN_ID');
+    }
+    throw new HttpError(500, `删除结果失败：${error.message}`, 'RESULT_DELETE_ERROR');
+  }
 }
 
 function handleResultsLatest(req, res) {
@@ -625,10 +662,14 @@ async function handleApi(req, res, url) {
   if (method === 'GET' && pathname === '/api/config') return handleConfig(req, res);
   if (method === 'GET' && pathname === '/api/dataset') return handleDataset(req, res, url);
   if (method === 'GET' && pathname === '/api/results') {
-    return handleResultsList(req, res);
+    return handleResultsList(req, res, url);
   }
   if (method === 'GET' && pathname === '/api/results/latest') {
     return handleResultsLatest(req, res);
+  }
+  if (method === 'DELETE' && pathname.startsWith('/api/results/')) {
+    let match = pathname.match(/^\/api\/results\/([^/]+)$/);
+    if (match) return handleDeleteResult(req, res, safeDecode(match[1]));
   }
   if (method === 'POST' && pathname === '/api/benchmark') {
     return handleStartBenchmark(req, res);

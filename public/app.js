@@ -38,11 +38,17 @@
     providerModels: null,
     // 跑分记录 / 多模型对比
     history: [],
+    latestRunId: null,
+    historyTotal: 0,
+    historyPage: 1,
+    historyPages: 1,
+    historyCache: new Map(),
     selectedRuns: new Set(),
     compareInitialized: false,
   };
 
   const COMPARE_MAX = 6;
+  const HISTORY_PAGE_SIZE = 6;
   const RUN_COLORS = ['#5eead4', '#fbbf24', '#f472b6', '#a78bfa', '#38bdf8', '#fb923c', '#34d399', '#f87171'];
 
   const $ = (id) => document.getElementById(id);
@@ -806,32 +812,28 @@
   }
 
   function selectedRunObjects() {
-    return state.history.filter((run) => state.selectedRuns.has(run.runId));
+    return [...state.selectedRuns]
+      .map((runId) => state.historyCache.get(runId))
+      .filter(Boolean);
   }
 
-  function historySummary() {
-    const byModel = new Map();
-    for (const run of state.history) {
-      const key = `${run.provider}/${run.model}`;
-      byModel.set(key, (byModel.get(key) || 0) + 1);
-    }
-    return [...byModel.entries()].map(([key, count]) => `${key} ×${count}`).join(' · ');
-  }
-
-  async function loadHistory({ focusRunId = null } = {}) {
+  async function loadHistory({ focusRunId = null, page = state.historyPage } = {}) {
     let data;
+    const targetPage = focusRunId ? 1 : Math.max(1, page);
     try {
-      data = await api('/api/results');
+      data = await api(`/api/results?page=${targetPage}&pageSize=${HISTORY_PAGE_SIZE}`);
     } catch (error) {
       showToast(`加载跑分记录失败：${error.message}`, 'warn', 5000);
       return;
     }
     state.history = Array.isArray(data?.runs) ? data.runs : [];
-    const ids = new Set(state.history.map((run) => run.runId));
-    for (const runId of [...state.selectedRuns]) {
-      if (!ids.has(runId)) state.selectedRuns.delete(runId);
-    }
-    if (focusRunId && ids.has(focusRunId) && !state.selectedRuns.has(focusRunId) && state.selectedRuns.size < COMPARE_MAX) {
+    state.latestRunId = data?.latestResultId ?? null;
+    state.historyTotal = Number(data?.total) || 0;
+    state.historyPages = Number(data?.totalPages) || 1;
+    state.historyPage = Number(data?.page) || targetPage;
+    for (const run of state.history) state.historyCache.set(run.runId, run);
+
+    if (focusRunId && state.historyCache.has(focusRunId) && !state.selectedRuns.has(focusRunId) && state.selectedRuns.size < COMPARE_MAX) {
       state.selectedRuns.add(focusRunId);
     }
     if (!state.compareInitialized && state.history.length) {
@@ -842,22 +844,20 @@
     renderCompare();
   }
 
-  // 默认对比：优先选两条「全量同配置」的不同模型记录，保证样本数/口径一致；
-  // 没有全量记录时退化为最新两条不同模型记录。
+  // 默认对比：优先选「全量同配置」的不同模型记录，最多 3 个，保证样本数/口径一致；
+  // 没有足够全量记录时退化为最新两条不同模型记录。
   function chooseInitialComparison(history) {
     const full = history.filter((run) => Number(run.datasetTotal) > 0 && Number(run.sampleCount) === Number(run.datasetTotal));
-    const pickPair = (pool) => {
-      const first = pool[0];
-      if (!first) return [];
-      const other = pool.find(
-        (run) => run.runId !== first.runId && (run.provider !== first.provider || run.model !== first.model),
-      ) || pool[1];
-      return other ? [first, other] : [first];
-    };
-    if (full.length >= 2) {
-      const pair = pickPair(full);
-      if (pair.length === 2) return pair;
+    const distinct = [];
+    const seen = new Set();
+    for (const run of full) {
+      const key = `${run.provider}||${run.model}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      distinct.push(run);
+      if (distinct.length >= 3) break;
     }
+    if (distinct.length >= 2) return distinct;
     const latest = history[0];
     const partner = history.find(
       (run) => run.runId !== latest.runId
@@ -872,15 +872,31 @@
     const list = $('historyList');
     const count = $('historyCount');
     if (!list) return;
-    if (count) count.textContent = `${state.history.length} 条`;
+    if (count) count.textContent = `${state.historyTotal} 条`;
     const clear = $('clearCompareBtn');
     if (clear) clear.hidden = state.selectedRuns.size === 0;
     const hint = $('historyHint');
     if (hint) {
-      hint.textContent = state.history.length
-        ? `${historySummary()} · 勾选 2 条以上做横向对比（最多 ${COMPARE_MAX} 条）`
+      hint.textContent = state.historyTotal
+        ? `共 ${state.historyTotal} 条记录 · 本页 ${state.history.length} 条 · 勾选 2 条以上做横向对比（最多 ${COMPARE_MAX} 条）`
         : '按模型分组显示每次跑分；勾选 2 条以上可做横向对比';
     }
+
+    const pager = $('historyPager');
+    const pageInfo = $('historyPageInfo');
+    const prev = $('historyPrevBtn');
+    const next = $('historyNextBtn');
+    if (pager && pageInfo) {
+      pager.hidden = state.historyPages <= 1;
+      pageInfo.textContent = '';
+      const b = el('b', '', String(state.historyPage));
+      pageInfo.appendChild(document.createTextNode('第 '));
+      pageInfo.appendChild(b);
+      pageInfo.appendChild(document.createTextNode(` / ${state.historyPages} 页 · 共 ${state.historyTotal} 条`));
+    }
+    if (prev) prev.disabled = state.historyPage <= 1;
+    if (next) next.disabled = state.historyPage >= state.historyPages;
+
     list.textContent = '';
     if (!state.history.length) {
       const empty = el('div', 'state-box empty', '暂无历史跑分记录。先跑一次分，结果会按模型归档在这里。');
@@ -955,11 +971,56 @@
     }
     row.appendChild(stats);
 
+    const actions = el('div', 'history-actions');
     const button = el('button', 'btn ghost tiny', run.runId === state.runId ? '当前' : '查看');
     button.type = 'button';
     button.disabled = run.runId === state.runId;
-    row.appendChild(button);
+    actions.appendChild(button);
+
+    const deleteBtn = el('button', 'btn ghost tiny history-delete', '删除');
+    deleteBtn.type = 'button';
+    deleteBtn.title = `删除跑分记录 ${run.runId}`;
+    deleteBtn.setAttribute('aria-label', `删除跑分记录 ${run.runId}`);
+    deleteBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      deleteHistoryRun(run.runId);
+    });
+    actions.appendChild(deleteBtn);
+    row.appendChild(actions);
     return row;
+  }
+
+  async function deleteHistoryRun(runId) {
+    if (!runId) return;
+    if (!window.confirm(`删除跑分记录 ${runId}？删除后不可恢复，如果它是最新记录，latest 会自动回退到上一条。`)) return;
+    const deletingCurrent = state.runId === runId;
+    try {
+      await api(`/api/results/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    } catch (error) {
+      showToast(`删除 ${runId} 失败：${error.message}`, 'error', 5000);
+      return;
+    }
+    state.historyCache.delete(runId);
+    state.selectedRuns.delete(runId);
+    await loadHistory({ page: state.historyPage });
+    if (deletingCurrent) {
+      try {
+        const latest = await api('/api/results/latest');
+        if (latest) {
+          renderResult(latest);
+        } else {
+          state.result = null;
+          state.runId = null;
+          state.page = 1;
+          renderOverview(null);
+          renderSamples();
+          if ($('overviewHint')) $('overviewHint').textContent = '暂无跑分结果';
+        }
+      } catch (error) {
+        showToast(`刷新最新结果失败：${error.message}`, 'warn', 5000);
+      }
+    }
+    showToast(`已删除 ${runId}`, 'success', 2600);
   }
 
   async function loadRun(runId, { scroll = false } = {}) {
@@ -1295,7 +1356,7 @@
     if (exportBtn) exportBtn.disabled = state.running || !result.records?.length;
     const overviewHint = $('overviewHint');
     if (overviewHint) {
-      const latestId = state.history[0]?.runId;
+      const latestId = state.latestRunId || state.history[0]?.runId;
       const suffix = latestId === result.runId ? '（最新一次）' : '';
       overviewHint.textContent = `当前查看：${result.runId} · ${result.provider}/${result.model}${suffix}`;
     }
@@ -1669,6 +1730,16 @@
       renderHistory();
       renderCompare();
     });
+    $('historyPrevBtn')?.addEventListener('click', () => {
+      if (state.historyPage <= 1) return;
+      loadHistory({ page: state.historyPage - 1 });
+      $('historyPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    $('historyNextBtn')?.addEventListener('click', () => {
+      if (state.historyPage >= state.historyPages) return;
+      loadHistory({ page: state.historyPage + 1 });
+      $('historyPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
 
     const limitSelect = $('limitSelect');
     limitSelect?.addEventListener('change', () => {
@@ -1766,6 +1837,7 @@
       const [health, config] = await Promise.all([api('/api/health'), api('/api/config')]);
       state.health = health;
       state.config = config;
+      state.latestRunId = config.latestResultId || null;
       state.categories = Array.isArray(config.taxonomy) ? config.taxonomy : [];
       state.providerModels =
         config.providerModels && typeof config.providerModels === 'object'

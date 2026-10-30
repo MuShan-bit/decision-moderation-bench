@@ -14,7 +14,7 @@
   <a href="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml"><img alt="tests workflow" src="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml/badge.svg"></a>
   <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20%2B-339933">
   <img alt="dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <img alt="tests: 76 passed" src="https://img.shields.io/badge/tests-76%20passed-brightgreen">
+  <img alt="tests: 84 passed" src="https://img.shields.io/badge/tests-84%20passed-brightgreen">
   <img alt="providers: dashscope / bamboonode / jev / cloudflare / mock" src="https://img.shields.io/badge/providers-dashscope%20%7C%20bamboonode%20%7C%20jev%20%7C%20cloudflare%20%7C%20mock-5eead4">
   <a href="https://github.com/MuShan-bit/decision-moderation-bench"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-decision--moderation--bench-181717?logo=github"></a>
 </p>
@@ -28,7 +28,7 @@
 ## ✨ 功能
 
 - **多 Provider，同一套协议**：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`cloudflare`（Cloudflare Workers AI `clef-omni`）、`mock`（离线规则模拟）
-- **多模态图像审核**：`clef-omni` 支持把截图作为图片输入（请求体 `images[]`），内置 **120 条**图像评测集（8 类 × 15）与同批文本对照；`GET /api/images/<basename>` 同源提供样本图，样本浏览器直接展示并支持敏感图片打码
+- **多模态图像审核**：`clef-omni` 支持把截图作为图片输入（请求体 `images[]`），内置 **120 条**图像评测集（8 类 × 15）与同批文本对照；`GET /api/images/<basename>` 同源提供样本图，样本浏览器直接展示并支持敏感图片打码；真实 NSFW 实拍图可通过 `scripts/import_real_images.mjs` 本地导入（图片不入库）
 - **Provider → Model 级联**：前端只展示当前 provider 可用的模型，后端对跨 provider 的模型组合直接返回 `400 MODEL_NOT_ALLOWED`
 - **可复现评测集**：5 个公开中文数据集、固定 `seed=42`、金标全部来自原始标签映射，数据统计与局限见 [data/README.md](data/README.md)
 - **跑分记录按模型分组 + 分页 / 删除**：每次跑分独立保存为 `results/<runId>.json`，每页 6 条，可翻页查看或删除；删除 latest 会自动回退到上一条
@@ -153,6 +153,40 @@ node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
 | 隐私侵权 privacy | 15 | 0.696 | 0.696 | 0.000 |
 
 > 图像集每类仅 15 条，单类 F1 波动较大，结论以整体方向与 120 条总量为准。
+
+### 真实图像评测（NSFW 等，本地导入，不入库）
+
+上面的截图集只能测“图内文字”，**真实 NSFW / 暴力 / 血腥照片**的识别需要真实图像。但公开仓库不适合直接提交这类图片（GitHub 使用政策 + 版权/数据集许可证限制），因此这里做成**本地真实图像集**：图片只保存在本地 `data/real-images/`（已加入 `.gitignore`，不会入库），仓库提供导入与校验工具。
+
+1. 准备图片 + 人工标注（来源与许可证由使用者确认；多数 NSFW 数据集仅限研究用途）。标注 CSV 表头：
+
+   ```csv
+   file,violation,category,sensitive,source_detail
+   0001.jpg,1,sexual,1,自建 NSFW / 明确裸露
+   0002.jpg,0,safe,0,自建 NSFW / 正常
+   ```
+
+   `file` 为相对图片目录的路径；`violation=1` 时 `category` 必须是违规类别，`0` 时强制为 safe；`sensitive` 缺省时 sexual 自动打码；也支持 JSONL（字段同名）。
+
+2. 导入并校验（扩展名/魔数一致、单张 ≤4MiB、类别合法、路径不越界，生成后用正式 dataset 加载器再校验一遍）：
+
+   ```bash
+   node scripts/import_real_images.mjs \
+     --src /path/to/nsfw-eval/images --labels /path/to/nsfw-eval/labels.csv
+   # 输出 data/real-images/samples.jsonl + 复制后的图片
+   ```
+
+3. 跑分（与截图集完全同一套判定逻辑）：
+
+   ```bash
+   node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
+     --dataset data/real-images/samples.jsonl --concurrency 2
+   # Web 端：DATASET_PATH=data/real-images/samples.jsonl npm start
+   ```
+
+- 建议 **≥100 张**、正负样本均衡（正常图也要有），并覆盖不同来源/构图；小样本或单一来源的准确率波动大，不宜外推。
+- 由于真实图片不入库，本 README 的「图像评测」表格仍指**截图集**；真实图像跑分结果请在本地记录（可另附报告，但不要提交原图）。
+- 若真实图像集里同时包含图内文字截图与实拍图，`modality` 仍统一记为 image，逐条结果里的 `source_detail` 可用于区分来源。
 
 ## 🚀 快速开始
 
@@ -288,6 +322,7 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 ├── scripts/
 │   ├── prepare_data.py     # 文本数据集构建（Python 标准库）
 │   ├── prepare_images.py   # 图像评测集渲染（Python + Pillow，仅数据准备）
+│   ├── import_real_images.mjs # 本地真实图像导入（NSFW 等，图片不入库）
 │   └── benchmark.mjs       # CLI 跑分器
 ├── data/
 │   ├── eval/               # 825 条文本样本 + stats（入库）
@@ -295,7 +330,7 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 │   └── raw/                # 上游原始数据（不入库）
 ├── results/                # 跑分结果（*.json 不入库）
 ├── docs/                   # 契约 + 截图
-├── tests/                  # node:test（76 个）
+├── tests/                  # node:test（84 个）
 ├── REPORT.md               # 完整评测报告
 ├── LICENSE                 # MIT
 └── package.json
@@ -304,10 +339,10 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 ## ✅ 测试
 
 ```bash
-npm test          # node --test tests/  → 76 个测试
+npm test          # node --test tests/  → 84 个测试
 ```
 
-覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、Cloudflare clef-omni endpoint/信封解包/错误处理、图像样本 dataset 校验/多模态 payload/图片读取与 CSV、`/api/images` 路由与 `IMAGE_UNSUPPORTED` 防护、历史结果摘要/分页/删除、静态资源与路径穿越防护。
+覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、Cloudflare clef-omni endpoint/信封解包/错误处理、图像样本 dataset 校验/多模态 payload/图片读取与 CSV、`/api/images` 路由与 `IMAGE_UNSUPPORTED` 防护、真实图像导入校验（格式/大小/类别/路径）、历史结果摘要/分页/删除、静态资源与路径穿越防护。
 
 ## 🧠 设计说明
 

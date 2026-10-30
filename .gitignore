@@ -7,3 +7,6 @@ __pycache__/
 *.log
 .cache/
 .DS_Store
+
+# 真实图像评测集仅本地保存（含 NSFW 实拍图，不入库）
+data/real-images/

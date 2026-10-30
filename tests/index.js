@@ -9,3 +9,5 @@ import './providers.test.mjs';
 import './cloudflare.test.mjs';
 import './images.test.mjs';
 import './server.test.mjs';
+
+import './real-images.test.mjs';

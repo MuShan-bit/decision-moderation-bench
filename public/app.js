@@ -36,6 +36,11 @@
     categories: [],
     // provider -> 可用模型列表（后端 /api/config 下发，用于级联筛选）
     providerModels: null,
+    // 数据集档案：text / text-image / nsfw-image / custom
+    datasets: [],
+    datasetId: null,
+    // 当前展示结果所属的数据集（历史结果可能不是当前选择的数据集）
+    resultDatasetId: null,
     // 跑分记录 / 多模型对比
     history: [],
     latestRunId: null,
@@ -199,13 +204,29 @@
     label.textContent = text;
   }
 
+  function datasetMetaById(id, config = state.config) {
+    const datasets = Array.isArray(config?.datasets) ? config.datasets : [];
+    return datasets.find((item) => item.id === id) || null;
+  }
+
+  function currentDatasetMeta() {
+    return datasetMetaById(state.datasetId);
+  }
+
+  function datasetAllowedProviders(meta) {
+    if (!meta || !Array.isArray(meta.providers) || !meta.providers.length) return null;
+    return meta.providers;
+  }
+
   function setBadges(health, config) {
     const provider = health?.provider || config?.defaultProvider || '—';
     const model = health?.model || config?.defaultModel || '—';
-    const dataset = config?.datasetTotal ?? health?.dataset?.total ?? '—';
+    const meta = datasetMetaById(state.datasetId, config) || config?.dataset;
+    const datasetCount = meta?.sampleCount ?? config?.datasetTotal ?? health?.dataset?.total ?? '—';
+    const datasetName = meta?.name ? `${meta.name} · ` : '';
     if ($('badgeProvider')) $('badgeProvider').textContent = `provider · ${provider}`;
     if ($('badgeModel')) $('badgeModel').textContent = `model · ${model}`;
-    if ($('badgeDataset')) $('badgeDataset').textContent = `数据集 · ${dataset} 条`;
+    if ($('badgeDataset')) $('badgeDataset').textContent = `数据集 · ${datasetName}${datasetCount} 条`;
   }
 
   function updateMockBanner(providerName) {
@@ -283,27 +304,112 @@
     warn.hidden = true;
   }
 
+  function refreshProviderOptions(preferred) {
+    const cfg = state.config || {};
+    const allProviders = Array.isArray(cfg.providers) ? cfg.providers : ['mock'];
+    const allowed = datasetAllowedProviders(currentDatasetMeta());
+    const providers = allowed
+      ? allProviders.filter((name) => allowed.includes(name))
+      : allProviders;
+    const providerSelect = $('providerSelect');
+    if (!providerSelect) return null;
+    providerSelect.textContent = '';
+    for (const name of providers) {
+      const option = el('option', '', name);
+      option.value = name;
+      providerSelect.appendChild(option);
+    }
+    if (!providers.length) {
+      const option = el('option', '', '当前数据集无可用 provider');
+      option.value = '';
+      option.disabled = true;
+      providerSelect.appendChild(option);
+      providerSelect.disabled = true;
+    } else {
+      providerSelect.disabled = false;
+      const wanted = providers.includes(preferred)
+        ? preferred
+        : providers.includes(cfg.defaultProvider)
+          ? cfg.defaultProvider
+          : providers[0];
+      providerSelect.value = wanted;
+    }
+    refreshModelOptions(providerSelect.value || cfg.defaultProvider, cfg.defaultModel);
+    return providerSelect.value;
+  }
+
+  function refreshLimitOptions(meta) {
+    const select = $('limitSelect');
+    if (!select) return;
+    const count = Number(meta?.sampleCount) || 0;
+    const current = select.value || 'all';
+    const choices = [['all', count ? `全部（${count} 条）` : '全部']];
+    for (const value of [100, 200, 400, 800]) {
+      if (!count || value <= count) choices.push([String(value), String(value)]);
+    }
+    choices.push(['custom', '自定义…']);
+    select.textContent = '';
+    for (const [value, label] of choices) {
+      const option = el('option', '', label);
+      option.value = value;
+      select.appendChild(option);
+    }
+    select.value = choices.some(([value]) => value === current) ? current : 'all';
+  }
+
+  function updateDatasetWarn(meta) {
+    const warn = $('datasetWarn');
+    if (!warn) return;
+    if (meta && Array.isArray(meta.providers) && meta.providers.length) {
+      warn.textContent = `数据集「${meta.name}」为图像评测集，当前仅允许 ${meta.providers.join(' / ')}（clef-omni）；选择其他 provider 会被后端拒绝。`;
+      warn.hidden = false;
+    } else {
+      warn.hidden = true;
+    }
+  }
+
+  function applyDatasetSelection() {
+    const select = $('datasetSelect');
+    if (!select) return;
+    state.datasetId = select.value;
+    const meta = currentDatasetMeta();
+    const provider = refreshProviderOptions($('providerSelect')?.value || state.config?.defaultProvider);
+    refreshLimitOptions(meta);
+    updateDatasetWarn(meta);
+    updateProviderWarn(provider);
+    updateMockBanner();
+    setBadges(state.health, state.config);
+  }
+
   function populateControls() {
     const cfg = state.config || {};
-    const providers = Array.isArray(cfg.providers) ? cfg.providers : ['mock'];
-    const providerSelect = $('providerSelect');
-    if (providerSelect) {
-      providerSelect.textContent = '';
-      for (const name of providers) {
-        const option = el('option', '', name);
-        option.value = name;
-        providerSelect.appendChild(option);
-      }
-      providerSelect.value = providers.includes(cfg.defaultProvider)
-        ? cfg.defaultProvider
-        : providers[0] || 'mock';
-    }
 
-    // Provider 与 Model 级联：模型列表由 provider 决定
-    refreshModelOptions(
-      providerSelect ? providerSelect.value || cfg.defaultProvider : cfg.defaultProvider,
-      cfg.defaultModel,
-    );
+    // 数据集优先：文本 / 文本图像 / NSFW 实拍图像 / 自定义；图像集只允许 clef-omni
+    const datasets = Array.isArray(cfg.datasets) ? cfg.datasets : [];
+    const datasetSelect = $('datasetSelect');
+    if (datasetSelect) {
+      datasetSelect.textContent = '';
+      for (const item of datasets) {
+        const label = item.available
+          ? `${item.name}（${item.sampleCount} 条）`
+          : `${item.name}（未就绪）`;
+        const option = el('option', '', label);
+        option.value = item.id;
+        option.disabled = !item.available;
+        if (item.description) option.title = item.description;
+        datasetSelect.appendChild(option);
+      }
+      const preferred = datasets.some((item) => item.id === cfg.defaultDataset && item.available)
+        ? cfg.defaultDataset
+        : datasets.find((item) => item.available)?.id;
+      if (preferred) datasetSelect.value = preferred;
+      state.datasetId = datasetSelect.value || cfg.defaultDataset || null;
+    } else {
+      state.datasetId = cfg.defaultDataset || null;
+    }
+    const meta = currentDatasetMeta();
+
+    refreshProviderOptions(cfg.defaultProvider);
 
     const concurrencySelect = $('concurrencySelect');
     const options = Array.isArray(cfg.concurrencyOptions) && cfg.concurrencyOptions.length
@@ -320,6 +426,7 @@
       concurrencySelect.value = String(picked);
     }
 
+    refreshLimitOptions(meta);
     if (cfg.limitDefault) {
       const limitSelect = $('limitSelect');
       if (limitSelect && [...limitSelect.options].some((o) => o.value === String(cfg.limitDefault))) {
@@ -327,7 +434,8 @@
       }
     }
 
-    updateProviderWarn(providerSelect ? providerSelect.value : cfg.defaultProvider);
+    updateDatasetWarn(meta);
+    updateProviderWarn($('providerSelect')?.value || cfg.defaultProvider);
     updateMockBanner();
   }
 
@@ -407,6 +515,8 @@
     wrap.textContent = '';
     const items = [
       ['run', result.runId],
+      ['数据集', result.config?.datasetName || result.config?.dataset
+        || ((Number(result.config?.imageCount) || 0) > 0 ? 'text-image（旧结果）' : '—')],
       ['模型', `${result.provider} · ${result.model}`],
       ['并发', String(result.config?.concurrency ?? '—')],
       ['样本', String(result.config?.limit ?? '—')],
@@ -762,7 +872,9 @@
     let imageNode = null;
     if (isImage) {
       imageNode = el('img', `sample-image${masked ? ' is-masked' : ''}`);
-      imageNode.src = `/api/images/${encodeURIComponent(imageName)}`;
+      const datasetId = state.resultDatasetId || state.datasetId;
+      const query = datasetId ? `?dataset=${encodeURIComponent(datasetId)}` : '';
+      imageNode.src = `/api/images/${encodeURIComponent(imageName)}${query}`;
       imageNode.alt = '样本图片';
       imageNode.setAttribute('loading', 'lazy');
       imageNode.decoding = 'async';
@@ -997,7 +1109,7 @@
     identity.appendChild(el(
       'div',
       'history-sub',
-      `${fmtTime(run.startedAt)} · 样本 ${run.sampleCount}/${run.datasetTotal ?? '—'} · 并发 ${run.concurrency ?? '—'} · tokens ${fmtNum(run.tokensTotal)} · 错误 ${run.errors ?? 0}`,
+      `${fmtTime(run.startedAt)} · ${run.datasetName || run.datasetId || '数据集 ?'} · 样本 ${run.sampleCount}/${run.datasetTotal ?? '—'} · 并发 ${run.concurrency ?? '—'} · tokens ${fmtNum(run.tokensTotal)} · 错误 ${run.errors ?? 0}`,
     ));
     row.appendChild(identity);
 
@@ -1388,6 +1500,10 @@
     if (!result) return;
     state.result = result;
     state.runId = result.runId || null;
+    // 历史结果按当时的数据集取图片，避免切换数据集后图片串目录；
+    // 早期图像结果没有 config.dataset 字段，按 imageCount 回退到截图档案。
+    state.resultDatasetId = result.config?.dataset
+      || ((Number(result.config?.imageCount) || 0) > 0 ? 'text-image' : null);
     state.page = 1;
     renderOverview(result);
     if ($('chartGrid')) $('chartGrid').hidden = false;
@@ -1499,7 +1615,7 @@
     }
 
     try {
-      const body = { concurrency, provider, model };
+      const body = { concurrency, provider, model, dataset: state.datasetId };
       if (limit !== null) body.limit = limit;
       const created = await api('/api/benchmark', {
         method: 'POST',
@@ -1596,7 +1712,7 @@
       return;
     }
     const header = [
-      'id', 'source', 'sensitive', 'gold_violation', 'gold_categories', 'pred_violation',
+      'id', 'source', 'image', 'sensitive', 'gold_violation', 'gold_categories', 'pred_violation',
       'pred_categories', 'severity', 'confidence', 'correct', 'category_hit', 'latencyMs',
       'tokens_prompt', 'tokens_total', 'parseError', 'error', 'text', 'reason',
     ];
@@ -1608,6 +1724,7 @@
       lines.push([
         csvCell(r.id),
         csvCell(r.source),
+        csvCell(r.image || ''),
         csvCell(r.sensitive ? 1 : 0),
         csvCell(gold.violation ? 1 : 0),
         csvCell((gold.categories || []).join('|')),
@@ -1791,6 +1908,10 @@
       if (wrap) wrap.hidden = limitSelect.value !== 'custom';
     });
 
+    $('datasetSelect')?.addEventListener('change', () => {
+      applyDatasetSelection();
+    });
+
     $('providerSelect')?.addEventListener('change', (event) => {
       updateMockBanner(event.target.value);
       updateProviderWarn(event.target.value);
@@ -1887,14 +2008,18 @@
         config.providerModels && typeof config.providerModels === 'object'
           ? config.providerModels
           : null;
-      setBadges(health, config);
+      state.datasets = Array.isArray(config.datasets) ? config.datasets : [];
       populateControls();
+      setBadges(health, config);
       renderTaxonomy();
       populateCategoryFilter();
       setConn(health.provider === 'mock' ? 'demo' : 'online', health.provider === 'mock' ? '演示模式' : '已连接');
       setErrorBanner('');
       if (health.dataset?.fallback) {
         showToast('数据集加载失败，后端使用了内置兜底样本', 'warn', 6000);
+      }
+      if (config.datasetEnvError) {
+        showToast(config.datasetEnvError, 'warn', 7000);
       }
     } catch (error) {
       setConn('offline', '连接失败');

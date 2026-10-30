@@ -723,3 +723,69 @@ test('图像数据集：/api/dataset 携带 image，非 cloudflare 跑分返回 
     process.env.DATASET_PATH = previousDatasetPath;
   }
 });
+
+test('数据集档案：/api/config 暴露 text / text-image / nsfw-image + custom', async () => {
+  const { res, body } = await getJson('/api/config');
+  assert.equal(res.status, 200);
+  const ids = body.datasets.map((item) => item.id);
+  for (const id of ['text', 'text-image', 'nsfw-image', 'custom']) {
+    assert.ok(ids.includes(id), `缺少数据集 ${id}`);
+  }
+  assert.equal(body.defaultDataset, 'custom');
+  const textImage = body.datasets.find((item) => item.id === 'text-image');
+  assert.equal(textImage.modality, 'image');
+  assert.deepEqual(textImage.providers, ['cloudflare']);
+  assert.equal(textImage.available, true);
+  const text = body.datasets.find((item) => item.id === 'text');
+  assert.equal(text.modality, 'text');
+  assert.equal(text.providers, null);
+  assert.equal(body.dataset.id, 'custom');
+});
+
+test('GET /api/dataset?dataset=text-image：返回图像样本与数据集元数据', async () => {
+  const { res, body } = await getJson('/api/dataset?dataset=text-image&limit=3');
+  assert.equal(res.status, 200);
+  assert.equal(body.dataset.id, 'text-image');
+  assert.equal(body.datasetTotal, 120);
+  assert.equal(body.total, 120);
+  assert.equal(body.items.length, 3);
+  assert.ok(body.items.every((item) => item.image && item.image.endsWith('.png')));
+
+  const unknown = await getJson('/api/dataset?dataset=not-exist');
+  assert.equal(unknown.res.status, 400);
+  assert.equal(unknown.body.code, 'UNKNOWN_DATASET');
+});
+
+test('GET /api/images?dataset=text-image：按数据集目录取图，跨数据集不串图', async () => {
+  const hit = await fetch(`${baseUrl}/api/images/img-cold-0006.png?dataset=text-image`);
+  assert.equal(hit.status, 200);
+  assert.match(hit.headers.get('content-type'), /image\/png/);
+
+  const miss = await getJson('/api/images/img-cold-0006.png?dataset=text');
+  assert.equal(miss.res.status, 404);
+  assert.equal(miss.body.code, 'IMAGE_NOT_FOUND');
+
+  const unknown = await getJson('/api/images/img-cold-0006.png?dataset=not-exist');
+  assert.equal(unknown.res.status, 400);
+  assert.equal(unknown.body.code, 'UNKNOWN_DATASET');
+});
+
+test('POST /api/benchmark：图像数据集只允许 cloudflare（即使当前 provider 是 mock）', async () => {
+  const res = await fetch(`${baseUrl}/api/benchmark`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'mock', dataset: 'text-image', limit: 2 }),
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.code, 'IMAGE_UNSUPPORTED');
+  assert.match(body.error, /cloudflare/);
+
+  // 文本数据集仍允许 mock
+  const textRun = await fetch(`${baseUrl}/api/benchmark`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'mock', dataset: 'text', limit: 2 }),
+  });
+  assert.equal(textRun.status, 202);
+});

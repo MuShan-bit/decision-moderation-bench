@@ -88,7 +88,7 @@ python3 scripts/prepare_images.py \
 
 ```bash
 # 图像版（需要 provider 侧支持把 image 字段作为图片输入，例如 cloudflare clef-omni）
-node scripts/benchmark.mjs --provider cloudflare --dataset data/images/samples.jsonl
+node scripts/benchmark.mjs --provider cloudflare --dataset text-image
 
 # 纯文本对照（同一批样本的原始文本）
 node scripts/benchmark.mjs --provider cloudflare --dataset data/images/text_baseline.jsonl

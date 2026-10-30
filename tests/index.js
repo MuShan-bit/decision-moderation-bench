@@ -11,3 +11,5 @@ import './images.test.mjs';
 import './server.test.mjs';
 
 import './real-images.test.mjs';
+
+import './datasets.test.mjs';

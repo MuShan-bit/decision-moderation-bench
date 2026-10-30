@@ -103,6 +103,12 @@
 
       <form class="run-form" id="runForm" autocomplete="off">
         <label class="field">
+          <span>数据集</span>
+          <select id="datasetSelect">
+            <option value="text">文本评测集</option>
+          </select>
+        </label>
+        <label class="field">
           <span>样本数</span>
           <select id="limitSelect">
             <option value="all">全部</option>
@@ -150,6 +156,7 @@
       </form>
 
       <p class="inline-note warn" id="apiKeyWarn" hidden>未检测到 DASHSCOPE_API_KEY（百炼），选择 dashscope 会返回配置错误。</p>
+      <p class="inline-note" id="datasetWarn" hidden>图像数据集当前只允许 cloudflare（clef-omni）。</p>
 
       <div class="run-progress" id="progressWrap" hidden aria-live="polite">
         <div class="progress-head">

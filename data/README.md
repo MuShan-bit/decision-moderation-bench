@@ -5,6 +5,7 @@
 - `samples.jsonl`：825 条样本，每行一个 JSON
 - `stats.json`：总量 / 来源 / 类别 / 违规比例等统计
 - 原文只做过滤、去重、截断，**不改写、不伪造**；金标全部来自各数据集**原生标签的映射**。
+- 本目录是 `text` 档案；截图图像见 `data/images/`（`text-image`，仅 clef-omni），本地 NSFW 实拍图见 `data/real-images/`（`nsfw-image`，不入库）。档案定义与 provider 约束见 `server/dataset-profiles.mjs` 与根 README「数据集档案」一节。
 
 ## 1. 规模与分布
 

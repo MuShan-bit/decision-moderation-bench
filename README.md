@@ -14,12 +14,12 @@
   <a href="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml"><img alt="tests workflow" src="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml/badge.svg"></a>
   <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20%2B-339933">
   <img alt="dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <img alt="tests: 84 passed" src="https://img.shields.io/badge/tests-84%20passed-brightgreen">
+  <img alt="tests: 97 passed" src="https://img.shields.io/badge/tests-97%20passed-brightgreen">
   <img alt="providers: dashscope / bamboonode / jev / cloudflare / mock" src="https://img.shields.io/badge/providers-dashscope%20%7C%20bamboonode%20%7C%20jev%20%7C%20cloudflare%20%7C%20mock-5eead4">
   <a href="https://github.com/MuShan-bit/decision-moderation-bench"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-decision--moderation--bench-181717?logo=github"></a>
 </p>
 
-一个可运行的**多模型中文内容审核跑分平台**：自带 **825 条带金标文本评测集 + 120 条图像评测集**、深色 Web 控制台（跑分 / 历史记录 / 模型对比 / 样本浏览器 / 单条体验）、CLI 跑分器和完整评测报告。
+一个可运行的**多模型中文内容审核跑分平台**：自带 **825 条带金标文本评测集 + 120 条截图图像评测集**（文本 / 文本图像 / NSFW 实拍图像三套独立数据集档案）、深色 Web 控制台（跑分 / 历史记录 / 模型对比 / 样本浏览器 / 单条体验）、CLI 跑分器和完整评测报告。
 
 真实调用 TypeSafe **System One / typed-decision** 决策模型（百炼 `decision-model-preview`、BambooNode `startlux-decision-27b-autothink`、Jev `jev-preview`、Cloudflare Workers AI `clef-omni`），同一批样本、同一套决策逻辑下横向对比**准确率、F1、延迟与吞吐**；`clef-omni` 同时支持**文本与截图图像**输入；零 npm 运行时依赖，离线可用 mock provider 演示。
 
@@ -28,7 +28,8 @@
 ## ✨ 功能
 
 - **多 Provider，同一套协议**：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`cloudflare`（Cloudflare Workers AI `clef-omni`）、`mock`（离线规则模拟）
-- **多模态图像审核**：`clef-omni` 支持把截图作为图片输入（请求体 `images[]`），内置 **120 条**图像评测集（8 类 × 15）与同批文本对照；`GET /api/images/<basename>` 同源提供样本图，样本浏览器直接展示并支持敏感图片打码；真实 NSFW 实拍图可通过 `scripts/import_real_images.mjs` 本地导入（图片不入库）
+- **数据集分层**：文本评测集（`text`，任意 provider）、文本图像评测集（`text-image`，仅 `cloudflare`）、NSFW 实拍图像评测集（`nsfw-image`，本地导入、仅 `cloudflare`），CLI/API/Web 统一按数据集限制 provider
+- **多模态图像审核**：`clef-omni` 支持把截图作为图片输入（请求体 `images[]`），内置 **120 条**图像评测集（8 类 × 15）与同批文本对照；`GET /api/images/<basename>?dataset=` 同源提供样本图，样本浏览器直接展示并支持敏感图片打码；真实 NSFW 实拍图可通过 `scripts/import_real_images.mjs` 本地导入（图片不入库）
 - **Provider → Model 级联**：前端只展示当前 provider 可用的模型，后端对跨 provider 的模型组合直接返回 `400 MODEL_NOT_ALLOWED`
 - **可复现评测集**：5 个公开中文数据集、固定 `seed=42`、金标全部来自原始标签映射，数据统计与局限见 [data/README.md](data/README.md)
 - **跑分记录按模型分组 + 分页 / 删除**：每次跑分独立保存为 `results/<runId>.json`，每页 6 条，可翻页查看或删除；删除 latest 会自动回退到上一条
@@ -133,9 +134,9 @@
 - **局限**：图像集目前只覆盖“图内文字”，截图由文本样本渲染，不含真实 NSFW / 暴力 / 血腥实拍图，因此不能据此评价模型对真实违规图像内容的识别能力；真实图片评测需另行引入合规图像集。
 
 ```bash
-# 图像版（clef-omni；imagesDir 默认取数据集所在目录）
+# 文本图像档案（仅 clef-omni；图片自动从 data/images/ 读取）
 node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
-  --dataset data/images/samples.jsonl --concurrency 4
+  --dataset text-image --concurrency 4
 
 # 同批样本的纯文本对照
 node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
@@ -180,13 +181,28 @@ node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
 
    ```bash
    node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
-     --dataset data/real-images/samples.jsonl --concurrency 2
-   # Web 端：DATASET_PATH=data/real-images/samples.jsonl npm start
+     --dataset nsfw-image --concurrency 2
+   # Web 端：DATASET=nsfw-image npm start
    ```
 
 - 建议 **≥100 张**、正负样本均衡（正常图也要有），并覆盖不同来源/构图；小样本或单一来源的准确率波动大，不宜外推。
 - 由于真实图片不入库，本 README 的「图像评测」表格仍指**截图集**；真实图像跑分结果请在本地记录（可另附报告，但不要提交原图）。
 - 若真实图像集里同时包含图内文字截图与实拍图，`modality` 仍统一记为 image，逐条结果里的 `source_detail` 可用于区分来源。
+
+## 🗂️ 数据集档案（文本 / 文本图像 / NSFW 实拍图像）
+
+三套训练/评测集在代码里分成**独立档案**（`server/dataset-profiles.mjs`），不再靠“样本里有没有 `image` 字段”临时判断；选择数据集即确定 modality 与允许的 provider：
+
+| 档案 id | 名称 | 内容 | 路径 | Provider 限制 | 是否入库 |
+| --- | --- | --- | --- | --- | --- |
+| `text` | 文本评测集 | 825 条纯文本 | `data/eval/samples.jsonl` | 全部 | ✅ |
+| `text-image` | 文本图像评测集 | 120 张聊天/帖子截图（图内文字） | `data/images/samples.jsonl` | 仅 `cloudflare`（clef-omni） | ✅（截图已脱敏渲染） |
+| `nsfw-image` | NSFW 实拍图像评测集 | 本地导入的真实 NSFW/正常照片 | `data/real-images/samples.jsonl` | 仅 `cloudflare`（clef-omni） | ❌ 仅本地（`.gitignore`） |
+
+- 通过 `DATASET=text|text-image|nsfw-image` 切换服务默认数据集；`DATASET_PATH` 仍可指向任意自定义 jsonl（此时档案 id 为 `custom`）。
+- CLI 用 `--dataset text|text-image|nsfw-image` 选择档案，或传自定义路径；图像档案只允许 `cloudflare` + `clef-omni` 模型，其他 provider/模型会直接返回 `400 IMAGE_UNSUPPORTED`。
+- Web 控制台的数据集下拉框会自动隐藏不可用档案（例如本地未导入实拍图时 `nsfw-image` 置灰），图像档案下 Provider 只保留 `cloudflare`。
+- API：`/api/config.datasets` 返回三套档案及可用性；`/api/dataset?dataset=...`、`/api/images/<basename>?dataset=...` 按档案取数据/图片。
 
 ## 🚀 快速开始
 
@@ -230,7 +246,9 @@ npm start
 | `MODERATION_MODEL` | 否 | 默认 `decision-model-preview` |
 | `PORT` / `HOST` | 否 | 默认 `8788` / `127.0.0.1` |
 | `RESULTS_DIR` | 否 | 结果目录，默认 `results/` |
-| `IMAGES_DIR` | 否 | 图像样本目录；默认与 `DATASET_PATH` 同目录（图像数据集 `data/images/samples.jsonl` 会自动用同目录图片） |
+| `DATASET` | 否 | 默认数据集档案：`text`（默认）/ `text-image` / `nsfw-image` |
+| `DATASET_PATH` | 否 | 自定义数据集 jsonl 路径（优先级高于 `DATASET`；正好指向内置档案时自动映射档案 id） |
+| `IMAGES_DIR` | 否 | 图像样本目录；默认取档案的图片目录（`data/images/` / `data/real-images/`），自定义集默认与 jsonl 同目录 |
 
 > ⚠️ `.env` 已被 `.gitignore` 忽略，请勿把 Key 提交到仓库。前端与 API 均不会回显 Key。
 
@@ -239,7 +257,8 @@ npm start
 > 仓库包含用于内容安全评测的敏感文本样本；Web 端对敏感样本默认打码，请按研究/评测目的使用。
 
 - [data/eval/samples.jsonl](data/eval/samples.jsonl)：**825 条**文本，违规 525 / 正常 300，平均 54 字，零重复
-- [data/images/samples.jsonl](data/images/samples.jsonl)：**120 条**图像评测集（8 类 × 15，聊天/帖子截图，2026-10-30 生成，`seed=42`）；同目录 `text_baseline.jsonl` 为同批样本文本对照；`scripts/prepare_images.py` 可复现（数据准备需 Pillow，运行时不依赖）
+- [data/images/samples.jsonl](data/images/samples.jsonl)：**120 条**文本图像评测集（8 类 × 15，聊天/帖子截图，2026-10-30 生成，`seed=42`）；同目录 `text_baseline.jsonl` 为同批样本文本对照；`scripts/prepare_images.py` 可复现（数据准备需 Pillow，运行时不依赖）
+- `data/real-images/`：**NSFW 实拍图像集**，需本地用 `scripts/import_real_images.mjs` 导入后才有；图片与清单均不入库
 - 来源：COLD 320、ToxiCN 240、垃圾短信 120、Safety-Prompts 100、NSFW 图片描述 45
 - 生成：`python3 scripts/prepare_data.py`（纯标准库，固定 `seed=42`）
 - 原始数据集缓存在 `data/raw/`，**不纳入仓库**（遵循上游分发条款）；重新生成需按 [data/README.md](data/README.md) 准备原始文件
@@ -247,7 +266,7 @@ npm start
 
 ## 🖥️ Web 使用
 
-1. **配置跑分**：选择样本数、并发、Provider、Model（Model 随 Provider 级联）；
+1. **配置跑分**：选择数据集（文本 / 文本图像 / NSFW 实拍图像）、样本数、并发、Provider、Model（Model 随 Provider 级联；图像档案只保留 cloudflare）；
 2. **开始跑分**：任务异步执行，进度条实时更新；完成后展示 KPI、延迟直方图、混淆矩阵、分类别 F1、来源细分；
 3. **查看历史**：「跑分记录」按 `provider/model` 分组，点「查看」切换到任意一次结果；
 4. **模型对比**：勾选 2–6 条记录，自动出现对比表与图表；样本数/并发不同会提示不可直接比较；
@@ -270,9 +289,13 @@ node scripts/benchmark.mjs --provider jev --model jev-preview --concurrency 4
 # Cloudflare Workers AI clef-omni
 node scripts/benchmark.mjs --provider cloudflare --model clef-omni --concurrency 4
 
-# clef-omni 图像评测（120 条截图；自动从数据集同目录读取图片）
+# 文本图像档案（120 条截图；仅 clef-omni）
 node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
-  --dataset data/images/samples.jsonl --concurrency 4
+  --dataset text-image --concurrency 4
+
+# NSFW 实拍图像档案（先本地导入；仅 clef-omni）
+node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
+  --dataset nsfw-image --concurrency 2
 
 # 同批样本的纯文本对照
 node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
@@ -291,9 +314,9 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | 健康检查、provider/model、Key 配置状态 |
-| GET | `/api/config` | providers、provider→models 级联、taxonomy、并发选项 |
-| GET | `/api/dataset?offset=&limit=&filter=&category=&q=` | 数据集分页/过滤/搜索（图像样本带 `image` 字段） |
-| GET | `/api/images/:basename` | 图像样本文件（仅白名单扩展名 + basename，防目录穿越） |
+| GET | `/api/config` | providers、provider→models 级联、taxonomy、并发选项、数据集档案列表 |
+| GET | `/api/dataset?dataset=&offset=&limit=&filter=&category=&q=` | 数据集分页/过滤/搜索（`dataset` 省略用默认档案；图像样本带 `image` 字段） |
+| GET | `/api/images/:basename?dataset=` | 图像样本文件（仅白名单扩展名 + basename，防目录穿越） |
 | POST | `/api/benchmark` | 创建跑分任务（202 + runId） |
 | GET | `/api/benchmark/:runId` | 查询任务进度/状态 |
 | GET | `/api/results?page=&pageSize=` | 历史跑分分页摘要列表（按结束时间倒序，默认每页 10 条） |
@@ -316,6 +339,8 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 │   ├── index.mjs           # HTTP 服务 / 路由 / 静态资源
 │   ├── benchmark.mjs       # 跑分引擎 / 指标 / 结果持久化
 │   ├── dataset.mjs         # 数据集加载
+│   ├── dataset-profiles.mjs # 数据集档案：text / text-image / nsfw-image
+│   ├── datasets.mjs        # 档案选择、可用性、provider 约束
 │   ├── moderation.mjs      # taxonomy / 判定与阈值
 │   ├── providers/          # dashscope / bamboonode / jev / cloudflare / mock
 │   └── lib/                # env / limiter
@@ -326,11 +351,12 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 │   └── benchmark.mjs       # CLI 跑分器
 ├── data/
 │   ├── eval/               # 825 条文本样本 + stats（入库）
-│   ├── images/             # 120 条图像评测集 + 文本对照（入库）
+│   ├── images/             # 120 条文本图像评测集 + 文本对照（入库）
+│   ├── real-images/        # NSFW 实拍图像（本地导入，不入库）
 │   └── raw/                # 上游原始数据（不入库）
 ├── results/                # 跑分结果（*.json 不入库）
 ├── docs/                   # 契约 + 截图
-├── tests/                  # node:test（84 个）
+├── tests/                  # node:test（97 个）
 ├── REPORT.md               # 完整评测报告
 ├── LICENSE                 # MIT
 └── package.json
@@ -339,15 +365,15 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 ## ✅ 测试
 
 ```bash
-npm test          # node --test tests/  → 84 个测试
+npm test          # node --test tests/  → 97 个测试
 ```
 
-覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、Cloudflare clef-omni endpoint/信封解包/错误处理、图像样本 dataset 校验/多模态 payload/图片读取与 CSV、`/api/images` 路由与 `IMAGE_UNSUPPORTED` 防护、真实图像导入校验（格式/大小/类别/路径）、历史结果摘要/分页/删除、静态资源与路径穿越防护。
+覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、Cloudflare clef-omni endpoint/信封解包/错误处理、图像样本 dataset 校验/多模态 payload/图片读取与 CSV、`/api/images` 路由与 `IMAGE_UNSUPPORTED` 防护、数据集档案选择/可用性/provider 约束、真实图像导入校验（格式/大小/类别/路径）、历史结果摘要/分页/删除、静态资源与路径穿越防护。
 
 ## 🧠 设计说明
 
 - 所有真实 provider 都实现同一套 `judge(text)` 契约：`POST <endpoint>`，请求体 `{model, state, questions}`，返回结构化 `answers` 与 token 用量；Cloudflare Workers AI 走同一协议，只是响应包在 `{result,success,errors,messages}` 信封里，由 `server/providers/cloudflare.mjs` 解包并复用同一套解析/阈值逻辑；
-- 图像样本在数据集里用可选 `image` 字段（纯文件名）声明；跑分引擎读取图片转成 `{content_type, base64}`，作为 `judge(text, {images})` 的 `ctx.images` 传入，provider 在请求体附带 `images[]` 并把 instructions 切换为图片措辞；`supportsImages !== true` 的 provider 遇到图像样本会被拒绝（`400 IMAGE_UNSUPPORTED`），避免产生误导性分数；
+- 图像样本在数据集里用可选 `image` 字段（纯文件名）声明；跑分引擎读取图片转成 `{content_type, base64}`，作为 `judge(text, {images})` 的 `ctx.images` 传入，provider 在请求体附带 `images[]` 并把 instructions 切换为图片措辞；图像档案（`text-image` / `nsfw-image`）在创建任务前就只允许 `cloudflare`，其他 provider 直接 `400 IMAGE_UNSUPPORTED`；跑分引擎另有逐样本兜底检查，避免产生误导性分数；
 - 单次跑分对每个样本发 **4 个问题**（分类、攻击性、危害性、严重度），再按阈值组合成最终 verdict；`--pure` 可退化为 2 问 argmax 做消融；
 - 指标包含二分类 P/R/F1、Wilson 置信区间、分类别 macro/micro F1、来源细分、延迟分位数与吞吐；
 - 结果以 JSON 落盘，历史记录接口只返回摘要，前端对比视图无需加载逐条样本。

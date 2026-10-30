@@ -16,7 +16,7 @@
  *
  * labels.jsonl 也支持（每行一个对象，字段同名）。生成后可直接：
  *   node scripts/benchmark.mjs --provider cloudflare --model clef-omni \
- *     --dataset data/real-images/samples.jsonl --concurrency 2
+ *     --dataset nsfw-image --concurrency 2
  */
 
 import fs from 'node:fs';
@@ -60,7 +60,7 @@ const HELP = `真实图像评测集导入（本地图片，不入库）
 示例：
   node scripts/import_real_images.mjs --src ~/nsfw-eval/images --labels ~/nsfw-eval/labels.csv
   node scripts/benchmark.mjs --provider cloudflare --model clef-omni \\
-    --dataset data/real-images/samples.jsonl --concurrency 2
+    --dataset nsfw-image --concurrency 2
 `;
 
 function fail(message) {

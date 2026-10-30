@@ -11,6 +11,15 @@ import { pathToFileURL } from 'node:url';
 
 import { loadEnv, getConfig } from './lib/env.mjs';
 import { getDataset, filterSamples } from './dataset.mjs';
+import {
+  assertDatasetModel,
+  assertDatasetProvider,
+  defaultDatasetId,
+  getDefaultDataset,
+  listDatasetSummaries,
+  publicDatasetInfo,
+  resolveDatasetSelection,
+} from './datasets.mjs';
 import { taxonomyConfig } from './moderation.mjs';
 import {
   PROVIDER_NAMES,
@@ -294,16 +303,22 @@ function pruneJobs() {
 
 function handleHealth(req, res) {
   const cfg = getConfig();
-  const dataset = getDataset({ filePath: cfg.datasetPath });
+  const selection = getDefaultDataset(cfg);
   sendJson(res, 200, {
     ok: true,
     provider: cfg.effectiveProvider,
     model: resolveModelForProvider(cfg.effectiveProvider, '', cfg),
     dataset: {
-      total: dataset.samples.length,
-      fallback: dataset.fallback === true,
-      error: dataset.error || null,
-      invalidLines: dataset.invalidLines || 0,
+      id: selection.id,
+      name: selection.name,
+      kind: selection.kind,
+      modality: selection.modality,
+      total: selection.sampleCount,
+      imageCount: selection.imageCount,
+      available: selection.available,
+      fallback: selection.fallback === true,
+      error: selection.error || null,
+      invalidLines: selection.invalidLines || 0,
     },
     apiKeyConfigured: cfg.apiKeyConfigured,
     workspaceConfigured: cfg.workspaceConfigured,
@@ -318,7 +333,8 @@ function handleHealth(req, res) {
 
 function handleConfig(req, res) {
   const cfg = getConfig();
-  const dataset = getDataset({ filePath: cfg.datasetPath });
+  const selection = getDefaultDataset(cfg);
+  const datasets = listDatasetSummaries(cfg);
   sendJson(res, 200, {
     providers: [...PROVIDER_NAMES],
     models: cfg.models,
@@ -329,10 +345,15 @@ function handleConfig(req, res) {
     taxonomy: taxonomyConfig(),
     concurrencyOptions: cfg.concurrencyOptions,
     latestResultId: latestResultId(cfg),
-    datasetTotal: dataset.samples.length,
-    datasetFallback: dataset.fallback === true,
+    // 数据集档案：文本 / 文本图像 / NSFW 实拍图像（以及 DATASET_PATH 自定义集）
+    datasets,
+    defaultDataset: defaultDatasetId(cfg),
+    dataset: publicDatasetInfo(selection),
+    datasetTotal: selection.sampleCount,
+    datasetFallback: selection.fallback === true,
+    datasetEnvError: cfg.datasetEnvError || null,
     limits: {
-      maxLimit: dataset.samples.length,
+      maxLimit: Math.max(1, selection.sampleCount || 1),
       maxConcurrency: MAX_CONCURRENCY,
       maxTextLength: MAX_TEXT_LENGTH,
     },
@@ -341,8 +362,14 @@ function handleConfig(req, res) {
 
 function handleDataset(req, res, url) {
   const cfg = getConfig();
-  const dataset = getDataset({ filePath: cfg.datasetPath });
   const params = url.searchParams;
+  const selection = resolveDatasetSelection(cfg, params.get('dataset'));
+  const dataset = {
+    samples: selection.samples,
+    fallback: selection.available !== true,
+    error: selection.error || null,
+    invalidLines: selection.invalidLines || 0,
+  };
 
   const filter = (params.get('filter') || 'all').trim();
   const allowedFilters = ['all', 'violation', 'safe', 'error'];
@@ -381,6 +408,7 @@ function handleDataset(req, res, url) {
     offset,
     limit,
     filter,
+    dataset: publicDatasetInfo(selection),
     datasetTotal: dataset.samples.length,
     fallback: dataset.fallback === true,
     error: dataset.error || null,
@@ -472,13 +500,21 @@ function handleStartBenchmark(req, res) {
   return (async () => {
     const cfg = getConfig();
     const body = await readJsonBody(req);
-    const dataset = getDataset({ filePath: cfg.datasetPath });
+    // 数据集选择：body.dataset 为 text / text-image / nsfw-image / custom；省略时用配置默认值
+    const selection = resolveDatasetSelection(cfg, body.dataset);
+    const dataset = {
+      samples: selection.samples,
+      fallback: selection.available !== true,
+      error: selection.error || null,
+    };
 
     if (!dataset.samples.length) {
       throw new HttpError(400, '数据集为空，无法跑分', 'EMPTY_DATASET');
     }
 
     const providerName = resolveProviderName(body.provider);
+    // 图像评测集当前只允许 cloudflare（clef-omni），在创建任务前就拒绝
+    assertDatasetProvider(selection, providerName);
 
     let requestedLimit = dataset.samples.length;
     if (body.limit !== undefined && body.limit !== null && body.limit !== '') {
@@ -489,16 +525,7 @@ function handleStartBenchmark(req, res) {
       requestedLimit = Math.floor(n);
     }
     const total = Math.min(requestedLimit, dataset.samples.length);
-
-    // 图像样本需要多模态 provider；当前仅 cloudflare clef-omni 支持 images
     const imageCount = dataset.samples.slice(0, total).filter((sample) => sample.image).length;
-    if (imageCount > 0 && providerName !== 'cloudflare') {
-      throw new HttpError(
-        400,
-        `数据集含 ${imageCount} 条图像样本，provider ${providerName} 不支持图片输入；请改用 cloudflare（clef-omni）`,
-        'IMAGE_UNSUPPORTED',
-      );
-    }
 
     let concurrency = DEFAULT_CONCURRENCY;
     if (body.concurrency !== undefined && body.concurrency !== null && body.concurrency !== '') {
@@ -514,6 +541,7 @@ function handleStartBenchmark(req, res) {
     }
 
     const model = resolveModelName(providerName, body.model);
+    assertDatasetModel(selection, model);
 
     const jobRunId = nextRunId(
       cfg.resultsDir,
@@ -536,6 +564,9 @@ function handleStartBenchmark(req, res) {
         concurrency,
         limit: total,
         datasetTotal: dataset.samples.length,
+        dataset: selection.id,
+        datasetName: selection.name,
+        datasetKind: selection.kind,
         modality: imageCount > 0 ? 'image' : 'text',
         imageCount,
       },
@@ -554,7 +585,13 @@ function handleStartBenchmark(req, res) {
           concurrency,
           runId: jobRunId,
           resultsDir: cfg.resultsDir,
-          imagesDir: cfg.imagesDir,
+          imagesDir: selection.imagesDir,
+          datasetMeta: {
+            id: selection.id,
+            name: selection.name,
+            kind: selection.kind,
+            modality: selection.modality,
+          },
           datasetFallback: dataset.fallback === true,
           onProgress: ({ done }) => {
             state.done = done;
@@ -700,7 +737,7 @@ function handleModerate(req, res) {
 
 const IMAGE_ROUTE_RE = /^[A-Za-z0-9._-]+\.(png|jpe?g|webp)$/i;
 
-/** GET /api/images/<basename>：图像样本文件（仅允许白名单扩展名 + basename，防目录穿越） */
+/** GET /api/images/<basename>?dataset=<id>：图像样本文件（仅允许白名单扩展名 + basename，防目录穿越） */
 function handleImage(req, res, url) {
   const rawName = safeDecode(url.pathname.slice('/api/images/'.length));
   if (!IMAGE_ROUTE_RE.test(rawName)) {
@@ -708,7 +745,9 @@ function handleImage(req, res, url) {
     return;
   }
   const cfg = getConfig();
-  const filePath = path.join(cfg.imagesDir, rawName);
+  // 图像只从「数据集档案」目录读取：默认用当前配置的数据集；历史结果可用 ?dataset= 指定
+  const selection = resolveDatasetSelection(cfg, url.searchParams.get('dataset'));
+  const filePath = path.join(selection.imagesDir, rawName);
   let stat;
   try {
     stat = fs.statSync(filePath);
@@ -867,6 +906,11 @@ function handleError(res, error) {
     return;
   }
   if (error instanceof HttpError) {
+    sendJson(res, error.status, { error: error.message, code: error.code });
+    return;
+  }
+  // 数据集选择/画像模块抛出的带 status/code 的错误（如 UNKNOWN_DATASET / DATASET_UNAVAILABLE）
+  if (Number.isInteger(error?.status) && error?.code) {
     sendJson(res, error.status, { error: error.message, code: error.code });
     return;
   }

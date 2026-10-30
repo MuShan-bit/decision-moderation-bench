@@ -3,6 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  DEFAULT_DATASET_ID,
+  profileByDatasetPath,
+  profileById,
+  resolveDatasetPaths,
+} from '../dataset-profiles.mjs';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** 仓库根目录（server/lib/env.mjs -> ../../） */
 export const ROOT = path.resolve(HERE, '..', '..');
@@ -161,13 +168,31 @@ export function getConfig(env = process.env) {
   const resultsDir = env.RESULTS_DIR
     ? path.resolve(ROOT, String(env.RESULTS_DIR))
     : path.join(ROOT, 'results');
+
+  // 评测集选择：
+  // - DATASET=text / text-image / nsfw-image 使用内置档案路径；
+  // - DATASET_PATH 显式指向自定义数据集（若正好等于内置档案则映射回该 id）；
+  // - 两者都未设置时默认 text（data/eval）。
+  const datasetEnvId = String(env.DATASET ?? '').trim();
+  const datasetProfile = datasetEnvId ? profileById(datasetEnvId) : null;
   const datasetPath = env.DATASET_PATH
     ? path.resolve(ROOT, String(env.DATASET_PATH))
-    : path.join(ROOT, 'data', 'eval', 'samples.jsonl');
+    : datasetProfile
+      ? resolveDatasetPaths(datasetProfile).path
+      : resolveDatasetPaths(profileById(DEFAULT_DATASET_ID)).path;
+  const matchedProfile =
+    profileByDatasetPath(datasetPath) || (env.DATASET_PATH ? null : datasetProfile);
+  const datasetId = matchedProfile?.id || 'custom';
+  const datasetEnvError =
+    datasetEnvId && !profileById(datasetEnvId)
+      ? `未知 DATASET：${datasetEnvId}（可选 text / text-image / nsfw-image）；已${env.DATASET_PATH ? '忽略并使用 DATASET_PATH' : '回退到 text'}`
+      : null;
   // 图像样本默认与数据集清单同目录（image 字段只存 basename），可用 IMAGES_DIR 覆盖
   const imagesDir = env.IMAGES_DIR
     ? path.resolve(ROOT, String(env.IMAGES_DIR))
-    : path.dirname(datasetPath);
+    : matchedProfile?.imagesRelPath
+      ? resolveDatasetPaths(matchedProfile).imagesDir
+      : path.dirname(datasetPath);
   const publicDir = env.PUBLIC_DIR
     ? path.resolve(ROOT, String(env.PUBLIC_DIR))
     : path.join(ROOT, 'public');
@@ -206,6 +231,8 @@ export function getConfig(env = process.env) {
     concurrencyOptions: [...CONCURRENCY_OPTIONS],
     mockLatencyScale: Math.max(0, toFloat(env.MOCK_LATENCY_SCALE, 1)),
     resultsDir,
+    dataset: datasetId,
+    datasetEnvError,
     datasetPath,
     imagesDir,
     publicDir,

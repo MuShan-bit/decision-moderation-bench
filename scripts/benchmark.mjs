@@ -3,7 +3,13 @@
 // 用法：node scripts/benchmark.mjs --provider mock --limit 30 --concurrency 2
 import path from 'node:path';
 import { loadEnv, getConfig, ROOT } from '../server/lib/env.mjs';
-import { getDataset } from '../server/dataset.mjs';
+import { profileById } from '../server/dataset-profiles.mjs';
+import {
+  assertDatasetModel,
+  assertDatasetProvider,
+  resolveCustomDataset,
+  resolveDatasetSelection,
+} from '../server/datasets.mjs';
 import {
   createProvider,
   PROVIDER_NAMES,
@@ -29,8 +35,8 @@ const HELP = `内容审核跑分 CLI（零依赖）
   -c, --concurrency <n>    并发数 1-${MAX_CONCURRENCY}（默认：${DEFAULT_CONCURRENCY}）
   -p, --provider <name>    provider：${PROVIDER_NAMES.join(' | ')}（默认取 .env MODERATION_PROVIDER，否则 dashscope）
   -m, --model <name>       模型名（默认取该 provider 的默认模型；bamboonode 可选 typesafe/jev-1.14 等）
-      --dataset <path>     自定义数据集 jsonl 路径（图像数据集示例：data/images/samples.jsonl）
-      --images-dir <dir>   图像样本目录（默认：数据集 jsonl 所在目录）
+      --dataset <name|path> 数据集：text（默认文本）/ text-image（截图）/ nsfw-image（本地实拍）/ 自定义 jsonl 路径
+      --images-dir <dir>   图像样本目录（默认：数据集所在目录）
       --out <dir>          结果输出目录（默认 results/）
       --pure               决策模型消融：关闭 attack/harmful 组合，仅 category 做 argmax
       --json               只输出最终 result JSON（便于脚本处理）
@@ -42,7 +48,8 @@ const HELP = `内容审核跑分 CLI（零依赖）
   node scripts/benchmark.mjs --provider bamboonode --model startlux-decision-27b-autothink --limit 200 --concurrency 4
   node scripts/benchmark.mjs --provider jev --model jev-preview --limit 200 --concurrency 4
   node scripts/benchmark.mjs --provider cloudflare --model clef-omni --limit 200 --concurrency 4
-  node scripts/benchmark.mjs --provider cloudflare --model clef-omni --dataset data/images/samples.jsonl --concurrency 4
+  node scripts/benchmark.mjs --provider cloudflare --model clef-omni --dataset text-image --concurrency 4
+  node scripts/benchmark.mjs --provider cloudflare --model clef-omni --dataset nsfw-image --concurrency 2
   node scripts/benchmark.mjs --provider cloudflare --model clef-omni --dataset data/images/text_baseline.jsonl --concurrency 4
 `;
 
@@ -167,12 +174,28 @@ async function main() {
     fail(`--concurrency 必须是 1-${MAX_CONCURRENCY} 的整数`);
   }
 
-  const datasetPath = args.dataset ? path.resolve(ROOT, args.dataset) : cfg.datasetPath;
-  const dataset = getDataset({ filePath: datasetPath });
+  // 数据集：支持内置档案名（text / text-image / nsfw-image）或自定义 jsonl 路径
+  let selection;
+  try {
+    const preset = args.dataset && profileById(args.dataset);
+    selection = preset
+      ? resolveDatasetSelection(cfg, args.dataset)
+      : args.dataset
+        ? resolveCustomDataset(
+            path.resolve(ROOT, args.dataset),
+            args.imagesDir ? path.resolve(ROOT, args.imagesDir) : null,
+          )
+        : resolveDatasetSelection(cfg, null);
+    if (args.imagesDir) selection.imagesDir = path.resolve(ROOT, args.imagesDir);
+    assertDatasetProvider(selection, providerName);
+    assertDatasetModel(selection, model);
+  } catch (error) {
+    fail(error.message);
+  }
+  const dataset = { samples: selection.samples, fallback: selection.available !== true };
+  const datasetPath = selection.path;
   if (!dataset.samples.length) fail('数据集为空，无法跑分');
-  const imagesDir = args.imagesDir
-    ? path.resolve(ROOT, args.imagesDir)
-    : path.dirname(datasetPath);
+  const imagesDir = selection.imagesDir;
 
   const resultsDir = args.out ? path.resolve(ROOT, args.out) : cfg.resultsDir;
 
@@ -223,9 +246,12 @@ async function main() {
     console.log(`model      : ${provider.model}`);
     console.log(`样本       : ${total} / ${dataset.samples.length}（并发 ${concurrency}）`);
     console.log(
-      `数据集     : ${
+      `数据集     : ${selection.id} · ${selection.name}（${selection.kind}）`,
+    );
+    console.log(
+      `数据集路径 : ${
         dataset.fallback
-          ? `内置兜底样本（${dataset.error}）`
+          ? `内置兜底样本（${selection.error}）`
           : datasetPath
       }`,
     );
@@ -247,6 +273,12 @@ async function main() {
     runId,
     resultsDir,
     imagesDir,
+    datasetMeta: {
+      id: selection.id,
+      name: selection.name,
+      kind: selection.kind,
+      modality: selection.modality,
+    },
     datasetFallback: dataset.fallback === true,
     takenRunIds: new Set([runId]),
     onProgress: ({ done, total: all }) => {

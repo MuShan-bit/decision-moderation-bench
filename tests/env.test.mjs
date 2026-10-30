@@ -56,6 +56,29 @@ test('getConfig：默认值', () => {
   assert.equal(cfg.cloudflareAccountIdConfigured, false);
 });
 
+test('getConfig：DATASET 档案选择与未知值回退', () => {
+  assert.equal(getConfig({}).dataset, 'text');
+  const textImage = getConfig({ DATASET: 'text-image' });
+  assert.equal(textImage.dataset, 'text-image');
+  assert.equal(textImage.datasetPath, path.join(ROOT, 'data', 'images', 'samples.jsonl'));
+  assert.equal(textImage.imagesDir, path.join(ROOT, 'data', 'images'));
+  assert.equal(textImage.datasetEnvError, null);
+
+  const nsfw = getConfig({ DATASET: 'nsfw-image' });
+  assert.equal(nsfw.dataset, 'nsfw-image');
+  assert.equal(nsfw.imagesDir, path.join(ROOT, 'data', 'real-images'));
+
+  // DATASET_PATH 优先于 DATASET（未知档案只告警，不改变显式路径）
+  const custom = getConfig({ DATASET: 'text-image', DATASET_PATH: 'tmp/data.jsonl' });
+  assert.equal(custom.datasetPath, path.resolve(ROOT, 'tmp/data.jsonl'));
+  assert.equal(custom.dataset, 'custom');
+  assert.equal(custom.imagesDir, path.dirname(path.resolve(ROOT, 'tmp/data.jsonl')));
+
+  const unknown = getConfig({ DATASET: 'not-a-dataset' });
+  assert.equal(unknown.dataset, 'text');
+  assert.match(unknown.datasetEnvError, /未知 DATASET/);
+});
+
 test('getConfig：从 env 覆盖 + 模型补齐', () => {
   const cfg = getConfig({
     DASHSCOPE_API_KEY: 'sk-test-123',

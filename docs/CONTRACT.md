@@ -72,6 +72,21 @@ Web 控制台 + 真实数据集 + 速度/准确率跑分。
 - 同目录 `text_baseline.jsonl`：同 id、原始文本、同 gold 的纯文本对照清单（无 `image`）。
 - 生成脚本 `scripts/prepare_images.py`（Python + Pillow，仅数据准备；运行时仍零依赖），产物纳入仓库（PNG 合计约 2.5MB）。
 
+### 3.2 数据集档案（`server/dataset-profiles.mjs`）
+
+数据集不再由单一 `DATASET_PATH` 隐式决定，而是三套独立档案；选择档案即确定 modality、图片目录与允许的 provider：
+
+| id | name | kind | modality | 清单路径 | 图片目录 | providers | 入库 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `text` | 文本评测集 | text | text | `data/eval/samples.jsonl` | — | null（全部） | ✅ |
+| `text-image` | 文本图像评测集 | text-image | image | `data/images/samples.jsonl` | `data/images/` | `["cloudflare"]` | ✅ |
+| `nsfw-image` | NSFW 实拍图像评测集 | nsfw-image | image | `data/real-images/samples.jsonl` | `data/real-images/` | `["cloudflare"]` | ❌（本地导入） |
+
+- 服务启动时：`DATASET` 选择档案（默认 `text`）；`DATASET_PATH` 显式指向自定义清单（优先级更高），若路径正好等于内置档案则映射回该 id，否则 id 为 `custom`；`IMAGES_DIR` 可覆盖图片目录。
+- 图像档案（`modality=image`）在创建跑分任务前只允许 `cloudflare` + `clef-omni` 模型；其他 provider/模型返回 `400 IMAGE_UNSUPPORTED`。文本/自定义文本档案不限制 provider。
+- 自定义图像清单（样本含 `image`）同样按 `image` 处理并限制 provider；`custom` 档案的元数据由样本推断。
+- `nsfw-image` 仅在本地导入图片与 `samples.jsonl` 后可用（`node scripts/import_real_images.mjs`），未就绪时档案 `available=false`，选择它会返回 `400 DATASET_UNAVAILABLE` 并附带导入命令提示。
+
 同时输出 `data/eval/stats.json`：
 ```json
 {"total": 820, "generatedAt":"...", "bySource": {...}, "byCategory": {...},
@@ -110,13 +125,13 @@ Web 控制台 + 真实数据集 + 速度/准确率跑分。
 
 - `GET /api/health` → `{"ok":true,"provider":"dashscope","model":"decision-model-preview","dataset":{"total":825},"apiKeyConfigured":true,"workspaceConfigured":true,"bamboonodeKeyConfigured":false,"jevKeyConfigured":false,"cloudflareKeyConfigured":false,"cloudflareAccountConfigured":false,"hasResults":true}`
 - `GET /api/config` → `{"providers":["dashscope","bamboonode","jev","cloudflare","mock"],"models":["decision-model-preview"],"providerModels":{"dashscope":["decision-model-preview"],"bamboonode":["startlux-decision-27b-autothink"],"jev":["jev-preview","jev-latest"],"cloudflare":["clef-omni"],"mock":["mock-rule-v1"]},"defaultProvider":"dashscope","defaultModel":"decision-model-preview","taxonomy":[{"code":"safe","label":"正常"},...],"concurrencyOptions":[1,2,4,8,16],"latestResultId":"..."}`（前端用 `providerModels` 做 Provider→Model 级联筛选）
-- `GET /api/dataset?offset=0&limit=50&filter=all|violation|safe|error` → `{"total":820,"items":[{sample fields...}]}`（不含 NSFW 原文时可选，但默认返回；sensitive 字段供前端打码；图像样本额外带 `image`）
-- `GET /api/images/:basename` → 图像样本文件（`Content-Type: image/png|jpeg|webp`，`Cache-Control: public, max-age=3600`）；仅允许白名单扩展名 + basename，目录穿越/非法名返回 `404 IMAGE_NOT_FOUND`
+- `GET /api/dataset?dataset=text|text-image|nsfw-image|custom&offset=0&limit=50&filter=all|violation|safe|error` → `{"total":120,"items":[{sample fields...}],"dataset":{...档案元数据...},"datasetTotal":120,"fallback":false,"error":null,"invalidLines":0}`（`dataset` 省略时使用默认档案；sensitive 字段供前端打码；图像样本额外带 `image`；未知档案 → `400 UNKNOWN_DATASET`，不可用档案 → `400 DATASET_UNAVAILABLE`）
+- `GET /api/images/:basename?dataset=` → 图像样本文件（`Content-Type: image/png|jpeg|webp`，`Cache-Control: public, max-age=3600`）；从所选档案的图片目录读取，仅允许白名单扩展名 + basename，目录穿越/非法名返回 `404 IMAGE_NOT_FOUND`；跨档案取图不会串目录
 - `GET /api/results?page=1&pageSize=6` → `{"total":12,"page":1,"pageSize":6,"totalPages":2,"latestResultId":"bench-...","runs":[{"runId":"bench-...","provider":"bamboonode","model":"startlux-decision-27b-autothink","simulated":false,"startedAt":"...","finishedAt":"...","sampleCount":825,"datasetTotal":825,"limit":825,"concurrency":4,"accuracy":0.8376,"precision":0.8654,"recall":0.8819,"f1":0.8736,"macroF1":0.754,"p50":1533,"p95":7977.6,"throughputRps":1.58,"tokensTotal":699963,"errors":0,"perCategory":{...}}]}`：历史跑分分页摘要（按结束时间倒序，不含 records 正文），供「跑分记录 / 模型对比」使用；`page` 默认 1，`pageSize` 默认 10、上限 50，越界 page 自动夹到最后一页
 - `GET /api/results/latest` → 最新 bench result（结构见第 6 节）或 `null`
 - `GET /api/results/:runId` → 结果
 - `DELETE /api/results/:runId` → `{"ok":true,"runId":"...","latestResultId":"..."}`：删除一条历史跑分；若删除的是 latest 指向记录，自动回退到剩余最新一条（没有则删除 `latest.json`），不存在返回 404
-- `POST /api/benchmark` body `{"limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；`provider=cloudflare` 时取 `clef-omni`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`；数据集含 `image` 样本且 provider 非 cloudflare → `400 IMAGE_UNSUPPORTED`
+- `POST /api/benchmark` body `{"dataset":"text","limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`dataset` 省略时用默认档案，图像档案（`text-image` / `nsfw-image` / 含图自定义集）仅允许 `cloudflare`，否则 `400 IMAGE_UNSUPPORTED`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；`provider=cloudflare` 时取 `clef-omni`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
 - `GET /api/benchmark/:runId` → `{"runId":"...","status":"queued|running|done|error","done":123,"total":820,"resultId":"bench-...","error":null,"startedAt":"...","elapsedMs":12345}`
 - `POST /api/moderate` body `{"text":"...","provider":"dashscope"}`（或 `bamboonode` + 对应 `model`）→ `{"verdict":{...},"latencyMs":830,"provider":"dashscope","model":"decision-model-preview","parseError":false,"raw":"..."}`
 - `GET /api/results/:runId/export.csv`（可选，前端也可本地生成）
@@ -157,7 +172,7 @@ user：`待审核文本：\n<<<\n{text}\n>>>`
 
 ```json
 {"runId":"bench-...","startedAt":"ISO","finishedAt":"ISO","provider":"dashscope","model":"decision-model-preview",
- "config":{"concurrency":4,"limit":820,"datasetTotal":820,"modality":"text|image","imageCount":0},
+ "config":{"concurrency":4,"limit":820,"datasetTotal":820,"dataset":"text","datasetName":"文本评测集","datasetKind":"text","modality":"text|image","imageCount":0},
  "records":[{"id":"cold-0001","text":"...","source":"cold","sensitive":false,"image":"img-cold-0001.png",
    "gold":{"violation":true,"categories":["hate"]},
    "prediction":{"violation":1,"categories":["hate"],"severity":2,"confidence":0.9,"reason":"..."},
@@ -176,16 +191,16 @@ user：`待审核文本：\n<<<\n{text}\n>>>`
 
 `categoryHit`：预测类别与 gold 类别集合有交集（gold 为 safe 时要求预测也为 safe）。
 `correct`：二分类判定正确。
-`image`：仅图像样本存在（纯文件名，前端拼 `/api/images/<name>`）；`modality` 由选中样本是否含 `image` 推导；CSV 导出末尾含 `image` 列。
+`image`：仅图像样本存在（纯文件名，前端拼 `/api/images/<name>?dataset=<config.dataset>`）；`modality` 由选中样本是否含 `image` 推导；`config.dataset` / `datasetName` / `datasetKind` 记录本次跑分使用的档案，历史摘要（`/api/results`）同样返回 `datasetId` / `datasetName` / `datasetKind` / `modality` / `imageCount`；CSV 导出末尾含 `image` 列。
 
 ## 7. 前端（public/）
 
 单页 dashboard（中文、深色、响应式、无 CDN/字体依赖，SVG 自绘图表）：
 1. 顶部：标题 + provider/model 徽标 + 「模拟模式」醒目提示（provider=mock 时）。
 2. KPI 卡片：准确率、精确率、召回率、F1、JSON 解析成功率、P50/P95 延迟、吞吐(req/s)、总耗时、总 tokens。
-3. 跑分控制：样本数（全部/100/200/400）、并发（1/2/4/8）、provider、model（随 provider 级联筛选，见 `/api/config.providerModels`）、开始按钮、进度条（轮询 `/api/benchmark/:id`）。
+3. 跑分控制：数据集（对应 `/api/config.datasets`，不可用档案置灰；图像档案只保留 cloudflare）、样本数（全部/100/200/400，随数据集样本数收紧）、并发（1/2/4/8）、provider、model（随 provider 级联筛选，见 `/api/config.providerModels`）、开始按钮、进度条（轮询 `/api/benchmark/:id`）。
 4. 延迟分布图（histogram，SVG）；分类别 F1 横向条形图；混淆矩阵 2×2；来源细分表（accuracy/F1）。
-   - 图像样本（`record.image`）在样本浏览器展示 `/api/images/<basename>` 图片，并加“图像”标签；`sensitive` 时图片默认模糊，点击/按钮揭示（与文本打码共用 `revealed` 状态）。
+   - 图像样本（`record.image`）在样本浏览器展示 `/api/images/<basename>?dataset=<结果所属档案>` 图片，并加“图像”标签；`sensitive` 时图片默认模糊，点击/按钮揭示（与文本打码共用 `revealed` 状态）。
 5. 样本浏览器：按 全部/判错/违规/正常 过滤 + 类别筛选 + 关键词搜索，分页或虚拟滚动；显示原文（sensitive 默认打码，点击显示）、gold、pred、耗时、token；错误样本高亮。
 6. 单条体验区：文本框 + 审核按钮 → 显示 verdict JSON 卡片（类别 chips、severity、confidence、reason、耗时）。
 7. 结果导出 CSV（前端生成）。

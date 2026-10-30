@@ -1,22 +1,32 @@
-// provider 工厂：dashscope（百炼 DashScope 决策模型）、bamboonode（StartLux 决策模型）、jev（Jev 官方网关）、mock（离线演示）。
+// provider 工厂：dashscope（百炼 DashScope 决策模型）、bamboonode（StartLux 决策模型）、jev（Jev 官方网关）、
+// cloudflare（Cloudflare Workers AI clef-omni）、mock（离线演示）。
 //
-// 三个真实入口都用同一套 TypeSafe System One（typed-decision）协议：
-//   POST <endpoint>/systemone  {model, state, questions}
+// 四个真实入口都用同一套 TypeSafe System One（typed-decision）协议：
+//   POST <endpoint>  {model, state, questions}
 // 区别只在 endpoint / API Key / 模型名：
 //   - dashscope  : 百炼 DashScope「决策模型（预览版）」decision-model-preview（workspace 专属域名）
 //   - bamboonode : https://api.bamboonode.dev/v1/systemone，模型 startlux-decision-27b-autothink
 //   - jev        : https://api.typesafe.ai/v1/systemone，模型 jev-preview(1.14) / jev-latest(1.13)
+//   - cloudflare : https://api.cloudflare.com/client/v4/accounts/{id}/ai/run/@cf/cloudflare/clef-omni
+//                  模型 clef-omni，响应包在 {result,success,errors,messages} 信封里
 //   - mock       : 本地规则模拟，永远标注 simulated
 import { createSystemOneProvider, DEFAULT_MODEL as DASHSCOPE_MODEL, DEFAULT_TIMEOUT_MS } from './systemone.mjs';
+import {
+  createCloudflareProvider,
+  DEFAULT_BASE_URL as DEFAULT_CLOUDFLARE_BASE_URL,
+  DEFAULT_MODEL as CLOUDFLARE_MODEL,
+  MODEL_PATH as CLOUDFLARE_MODEL_PATH,
+} from './cloudflare.mjs';
 import { createMockProvider } from './mock.mjs';
 import {
   DEFAULT_BAMBOONODE_BASE_URL,
   DEFAULT_BAMBOONODE_MODELS,
+  DEFAULT_CLOUDFLARE_MODELS,
   DEFAULT_JEVMODEL_BASE_URL,
   DEFAULT_JEVMODEL_MODELS,
 } from '../lib/env.mjs';
 
-export const PROVIDER_NAMES = Object.freeze(['dashscope', 'bamboonode', 'jev', 'mock']);
+export const PROVIDER_NAMES = Object.freeze(['dashscope', 'bamboonode', 'jev', 'cloudflare', 'mock']);
 export const MOCK_MODEL = 'mock-rule-v1';
 const PROVIDER_ALIASES = Object.freeze({ systemone: 'dashscope' });
 
@@ -43,10 +53,15 @@ export function providerModels(cfg = {}) {
       : [...DEFAULT_BAMBOONODE_MODELS];
   const jevModels =
     Array.isArray(cfg.jevModels) && cfg.jevModels.length ? cfg.jevModels : [...DEFAULT_JEVMODEL_MODELS];
+  const cloudflareModels =
+    Array.isArray(cfg.cloudflareModels) && cfg.cloudflareModels.length
+      ? cfg.cloudflareModels
+      : [...DEFAULT_CLOUDFLARE_MODELS];
   return {
     dashscope: [...models],
     bamboonode: [...bamboonodeModels],
     jev: [...jevModels],
+    cloudflare: [...cloudflareModels],
     mock: [MOCK_MODEL],
   };
 }
@@ -102,10 +117,12 @@ export function resolveModelForProvider(provider, requested, cfg = {}) {
 /**
  * 创建 provider 实例。
  * @param {{
- *   provider?: 'dashscope'|'bamboonode'|'jev'|'mock',
+ *   provider?: 'dashscope'|'bamboonode'|'jev'|'cloudflare'|'mock',
  *   model?: string,
  *   concurrency?: number,
  *   apiKey?: string,
+ *   apiToken?: string,
+ *   accountId?: string,
  *   workspaceId?: string,
  *   region?: string,
  *   systemoneBaseUrl?: string,
@@ -162,6 +179,34 @@ export function createProvider(options = {}) {
     });
   }
 
+  if (name === 'cloudflare') {
+    const apiToken = String(options.apiToken ?? options.apiKey ?? '').trim();
+    if (!apiToken) {
+      throw new ProviderConfigError(
+        'CLOUDFLARE_API_TOKEN 未配置，无法使用 Cloudflare Workers AI；请在 .env 中配置 API Token',
+        'MISSING_API_KEY',
+      );
+    }
+    const accountId = String(options.accountId ?? '').trim();
+    if (!accountId) {
+      throw new ProviderConfigError(
+        'CLOUDFLARE_ACCOUNT_ID 未配置，无法使用 Cloudflare Workers AI；请在 .env 中配置 Account ID',
+        'MISSING_ACCOUNT_ID',
+      );
+    }
+    return createCloudflareProvider({
+      apiToken,
+      accountId,
+      baseUrl: options.baseUrl,
+      model: options.model || CLOUDFLARE_MODEL,
+      timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
+      maxRetries: options.maxRetries,
+      ensemble: options.ensemble,
+      fetchImpl: options.fetchImpl,
+      concurrency: options.concurrency,
+    });
+  }
+
   if (!apiKey) {
     throw new ProviderConfigError(
       'DASHSCOPE_API_KEY 未配置，无法使用 dashscope；请改用 mock，或在 .env 中配置真实 Key',
@@ -195,10 +240,15 @@ export function createProvider(options = {}) {
 
 export {
   createSystemOneProvider,
+  createCloudflareProvider,
   createMockProvider,
   DEFAULT_BAMBOONODE_BASE_URL,
   DEFAULT_BAMBOONODE_MODELS,
+  DEFAULT_CLOUDFLARE_BASE_URL,
+  DEFAULT_CLOUDFLARE_MODELS,
   DEFAULT_JEVMODEL_BASE_URL,
   DEFAULT_JEVMODEL_MODELS,
+  CLOUDFLARE_MODEL,
+  CLOUDFLARE_MODEL_PATH,
   DASHSCOPE_MODEL,
 };

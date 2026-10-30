@@ -13,19 +13,24 @@ import {
   ProviderConfigError,
 } from '../server/providers/index.mjs';
 import { buildSystemOnePayload } from '../server/providers/systemone.mjs';
-import { DEFAULT_BAMBOONODE_MODELS, DEFAULT_JEVMODEL_MODELS } from '../server/lib/env.mjs';
+import {
+  DEFAULT_BAMBOONODE_MODELS,
+  DEFAULT_CLOUDFLARE_MODELS,
+  DEFAULT_JEVMODEL_MODELS,
+} from '../server/lib/env.mjs';
 
 const CFG = {
   models: ['decision-model-preview'],
   model: 'decision-model-preview',
   bamboonodeModels: ['startlux-decision-27b-autothink'],
   jevModels: ['jev-preview', 'jev-latest'],
+  cloudflareModels: ['clef-omni'],
 };
 
 const isProviderError = (code) => (error) => error instanceof ProviderConfigError && error.code === code;
 
-test('provider 列表：dashscope + bamboonode + jev + mock', () => {
-  assert.deepEqual([...PROVIDER_NAMES], ['dashscope', 'bamboonode', 'jev', 'mock']);
+test('provider 列表：dashscope + bamboonode + jev + cloudflare + mock', () => {
+  assert.deepEqual([...PROVIDER_NAMES], ['dashscope', 'bamboonode', 'jev', 'cloudflare', 'mock']);
   // 旧配置名兼容归一，不改变对外 provider 列表
   assert.equal(normalizeProviderName('systemone'), 'dashscope');
 });
@@ -35,11 +40,13 @@ test('providerModels 给出级联映射', () => {
     dashscope: ['decision-model-preview'],
     bamboonode: ['startlux-decision-27b-autothink'],
     jev: ['jev-preview', 'jev-latest'],
+    cloudflare: ['clef-omni'],
     mock: ['mock-rule-v1'],
   });
   // 未传外部模型时使用默认网关模型
   assert.deepEqual(providerModels({ models: ['x'] }).bamboonode, [...DEFAULT_BAMBOONODE_MODELS]);
   assert.deepEqual(providerModels({ models: ['x'] }).jev, [...DEFAULT_JEVMODEL_MODELS]);
+  assert.deepEqual(providerModels({ models: ['x'] }).cloudflare, [...DEFAULT_CLOUDFLARE_MODELS]);
 });
 
 test('resolveModelForProvider：缺省取该 provider 的默认模型', () => {
@@ -47,6 +54,7 @@ test('resolveModelForProvider：缺省取该 provider 的默认模型', () => {
   assert.equal(resolveModelForProvider('systemone', '', CFG), 'decision-model-preview');
   assert.equal(resolveModelForProvider('bamboonode', '', CFG), 'startlux-decision-27b-autothink');
   assert.equal(resolveModelForProvider('jev', '', CFG), 'jev-preview');
+  assert.equal(resolveModelForProvider('cloudflare', '', CFG), 'clef-omni');
   assert.equal(resolveModelForProvider('mock', '', CFG), MOCK_MODEL);
 });
 
@@ -65,6 +73,14 @@ test('resolveModelForProvider：拒绝跨 provider 的模型组合', () => {
   );
   assert.throws(
     () => resolveModelForProvider('jev', 'startlux-decision-27b-autothink', CFG),
+    isProviderError('MODEL_NOT_ALLOWED'),
+  );
+  assert.throws(
+    () => resolveModelForProvider('cloudflare', 'jev-preview', CFG),
+    isProviderError('MODEL_NOT_ALLOWED'),
+  );
+  assert.throws(
+    () => resolveModelForProvider('dashscope', 'clef-omni', CFG),
     isProviderError('MODEL_NOT_ALLOWED'),
   );
   assert.throws(() => resolveModelForProvider('unknown-provider', '', CFG), isProviderError('UNKNOWN_PROVIDER'));
@@ -107,6 +123,36 @@ test('createProvider：bamboonode 使用网关 key / endpoint / 模型', () => {
   assert.equal(provider.model, 'typesafe/jev-1.14');
   assert.equal(provider.endpoint, 'https://api.bamboonode.dev/v1/systemone');
   assert.equal(provider.simulated, false);
+});
+
+test('createProvider：cloudflare 使用 Workers AI REST endpoint / token / clef-omni', () => {
+  const accountId = '0123456789abcdef0123456789abcdef';
+  const provider = createProvider({
+    provider: 'cloudflare',
+    apiToken: 'cf-test-token',
+    accountId,
+    model: 'clef-omni',
+  });
+  assert.equal(provider.name, 'cloudflare');
+  assert.equal(provider.model, 'clef-omni');
+  assert.equal(
+    provider.endpoint,
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/cloudflare/clef-omni`,
+  );
+  assert.equal(provider.simulated, false);
+  // 未显式指定模型时使用 CLOUDFLARE_MODELS 默认值
+  assert.equal(createProvider({ provider: 'cloudflare', apiToken: 't', accountId }).model, 'clef-omni');
+});
+
+test('createProvider：cloudflare 缺凭据时给出明确错误码', () => {
+  assert.throws(
+    () => createProvider({ provider: 'cloudflare' }),
+    isProviderError('MISSING_API_KEY'),
+  );
+  assert.throws(
+    () => createProvider({ provider: 'cloudflare', apiToken: 't' }),
+    isProviderError('MISSING_ACCOUNT_ID'),
+  );
 });
 
 test('createProvider：缺 key/workspace 给出明确错误码', () => {

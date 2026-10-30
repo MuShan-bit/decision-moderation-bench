@@ -14,20 +14,20 @@
   <a href="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml"><img alt="tests workflow" src="https://github.com/MuShan-bit/decision-moderation-bench/actions/workflows/test.yml/badge.svg"></a>
   <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20%2B-339933">
   <img alt="dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <img alt="tests: 58 passed" src="https://img.shields.io/badge/tests-58%20passed-brightgreen">
-  <img alt="providers: dashscope / bamboonode / jev / mock" src="https://img.shields.io/badge/providers-dashscope%20%7C%20bamboonode%20%7C%20jev%20%7C%20mock-5eead4">
+  <img alt="tests: 67 passed" src="https://img.shields.io/badge/tests-67%20passed-brightgreen">
+  <img alt="providers: dashscope / bamboonode / jev / cloudflare / mock" src="https://img.shields.io/badge/providers-dashscope%20%7C%20bamboonode%20%7C%20jev%20%7C%20cloudflare%20%7C%20mock-5eead4">
   <a href="https://github.com/MuShan-bit/decision-moderation-bench"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-decision--moderation--bench-181717?logo=github"></a>
 </p>
 
 一个可运行的**多模型中文内容审核跑分平台**：自带 **825 条带金标评测集**、深色 Web 控制台（跑分 / 历史记录 / 模型对比 / 样本浏览器 / 单条体验）、CLI 跑分器和完整评测报告。
 
-真实调用 TypeSafe **System One / typed-decision** 决策模型（百炼 `decision-model-preview`、BambooNode `startlux-decision-27b-autothink`、Jev `jev-preview`），同一批样本、同一套决策逻辑下横向对比**准确率、F1、延迟与吞吐**；零 npm 运行时依赖，离线可用 mock provider 演示。
+真实调用 TypeSafe **System One / typed-decision** 决策模型（百炼 `decision-model-preview`、BambooNode `startlux-decision-27b-autothink`、Jev `jev-preview`、Cloudflare Workers AI `clef-omni`），同一批样本、同一套决策逻辑下横向对比**准确率、F1、延迟与吞吐**；零 npm 运行时依赖，离线可用 mock provider 演示。
 
 > 完整方法论、消融、错误分析与复现命令见 **[REPORT.md](REPORT.md)**；接口与数据结构契约见 **[docs/CONTRACT.md](docs/CONTRACT.md)**。
 
 ## ✨ 功能
 
-- **多 Provider，同一套协议**：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`mock`（离线规则模拟）
+- **多 Provider，同一套协议**：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev 官方网关）、`cloudflare`（Cloudflare Workers AI `clef-omni`）、`mock`（离线规则模拟）
 - **Provider → Model 级联**：前端只展示当前 provider 可用的模型，后端对跨 provider 的模型组合直接返回 `400 MODEL_NOT_ALLOWED`
 - **可复现评测集**：5 个公开中文数据集、固定 `seed=42`、金标全部来自原始标签映射，数据统计与局限见 [data/README.md](data/README.md)
 - **跑分记录按模型分组 + 分页 / 删除**：每次跑分独立保存为 `results/<runId>.json`，每页 6 条，可翻页查看或删除；删除 latest 会自动回退到上一条
@@ -80,32 +80,38 @@
 
 ## 📊 模型测评结果
 
-评测条件：**825 条**中文带金标样本（违规 63.6%）、并发 **4**、同一套「4 问 + 阈值」决策逻辑；百炼与 StartLux 于 2026-10-23 实测，Jev 于 2026-10-24 补测。
+评测条件：**825 条**中文带金标样本（违规 63.6%）、同一套「4 问 + 阈值」决策逻辑；2026-10-30 通过 Web 控制台全量复测（`dashscope` 并发 **16**，其余模型并发 **4**）。准确率 / F1 与并发无关；延迟与吞吐受并发影响，横向比较吞吐时请注意并发差异。
 
-| 模型 | Provider | 准确率 | 精确率 | 召回率 | F1 | P50 延迟 | P95 延迟 | 吞吐 | 825 条总耗时 |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `decision-model-preview` | 百炼 `dashscope` | 73.2% | 83.5% | 72.2% | 0.774 | **130ms** | 1.94s | 11.03 req/s | 74.8s |
-| `startlux-decision-27b-autothink` | BambooNode `bamboonode` | **83.8%** | **86.5%** | 88.2% | **0.874** | 1.53s | 7.98s | 1.58 req/s | 8m41s |
-| `jev-preview` | Jev / TypeSafe `jev` | 79.9% | 80.5% | **90.3%** | 0.851 | 313ms | **359ms** | **12.46 req/s** | **66.2s** |
+> 本次为 4 个真实 provider 的完整复测：百炼、StartLux、Jev 与 Cloudflare `clef-omni`；逐条结果写入本地 `results/`（`*.json` 不入库）。[REPORT.md](REPORT.md) 记录的是 2026-10-23/24 的首次评测，本节以 2026-10-30 复测结果为准。
 
-- **StartLux 质量最高**：准确率 **83.8%**、F1 **0.874**，比百炼 **+10.6pt / +10.0pt**，尤其补强了百炼最弱的 hate（F1 0.228 → 0.550）与 spam（0.326 → 0.875）。
-- **Jev 召回率最高、综合最均衡**：准确率 79.9%、F1 0.851，介于 StartLux 与百炼之间；召回率 **90.3%** 为三者最高，误杀（FP 115）高于 StartLux（72）。
-- **速度呈现三种取舍**：百炼 P50 最快（130ms），但 P95 1.94s、吞吐 11.03 req/s；Jev P50 313ms、**P95 仅 359ms**、吞吐 **12.46 req/s** 为三者最高；StartLux P50 1.53s、P95 7.98s、吞吐 1.58 req/s。
-- 解析失败与调用错误均为 **0**；tokens：百炼 473,090（573/条），StartLux 699,963（848/条），Jev 941,054（1,141/条）。
+| 模型 | Provider | 并发 | 准确率 | 精确率 | 召回率 | F1 | P50 延迟 | P95 延迟 | 吞吐 | 825 条总耗时 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `decision-model-preview` | 百炼 `dashscope` | 16 | 73.2% | 83.5% | 72.2% | 0.774 | **130ms** | 5.80s | 21.67 req/s | **38.1s** |
+| `startlux-decision-27b-autothink` | BambooNode `bamboonode` | 4 | **83.8%** | **86.5%** | 88.2% | **0.874** | 1.69s | 11.34s | 1.13 req/s | 12m7s |
+| `jev-preview` | Jev / TypeSafe `jev` | 4 | 79.9% | 80.6% | **90.1%** | 0.851 | 343ms | **384ms** | 11.13 req/s | 74.1s |
+| `clef-omni` | Cloudflare Workers AI `cloudflare` | 4 | 78.3% | 85.7% | 79.1% | 0.823 | 431ms | 480ms | 8.96 req/s | 92.1s |
+
+- **StartLux 质量最高**：准确率 **83.8%**、F1 **0.874**，比百炼 **+10.5pt / +10.0pt**；补强了百炼最弱的 hate（F1 0.228 → 0.550）与 spam（0.326 → 0.875）。代价是延迟最高（P50 1.69s、P95 11.34s、max 60.8s）与并发 4 下吞吐最低（1.13 req/s）。
+- **Cloudflare `clef-omni` 首次全量跑分**：准确率 **78.3%**、精确率 **85.7%**（仅次于 StartLux）、召回率 79.1%、F1 **0.823**；误杀 FP 仅 **69** 为四者最低。分类别上 spam（F1 **0.882**）与 illegal（**0.874**）为四者最高，hate（0.478）优于百炼、弱于 StartLux / Jev；P50 431ms、P95 480ms，尾延迟仅次于 Jev。
+- **Jev 召回率最高**：准确率 79.9%、F1 0.851，召回率 **90.1%** 为四者最高，误杀 FP 114；P50 343ms、P95 **384ms** 为四者最稳，并发 4 下吞吐 11.13 req/s。
+- **速度呈现清晰取舍**：百炼 P50 **130ms** 最快，但 P95 5.80s（并发 16 下吞吐 21.67 req/s）；Jev 与 `clef-omni` 的 P95 分别为 384ms / 480ms，尾延迟显著优于 StartLux 的 11.34s。
+- 解析失败与调用错误均为 **0**；tokens：百炼 473,090（573/条），StartLux 784,334（951/条，含 completion 84,371），Jev 1,041,957（1,263/条，含 completion 100,903），`clef-omni` 767,615（930/条，completion 0）。
 - 200 条样本档复测：百炼 ensemble **73.5%**、StartLux **85.0%**，与全量结论一致；百炼纯 argmax 仅 **61.5%**（消融详见报告）。
 - Jev 本次使用 `jev-preview`（1.14）跑全量；`jev-latest`（1.13 stable）也可用 `node scripts/benchmark.mjs --provider jev --model jev-latest --concurrency 4` 跑同一套评测。
 
 ### 分类别 F1 对比（825 条）
 
-| 类别 | 支持数 | 百炼 `decision-model-preview` | StartLux | Jev `jev-preview` |
-| --- | ---: | ---: | ---: | ---: |
-| 辱骂攻击 insult | 195 | 0.639 | **0.724** | 0.682 |
-| 歧视仇恨 hate | 115 | 0.228 | **0.550** | 0.525 |
-| 色情低俗 sexual | 45 | 0.714 | 0.774 | **0.791** |
-| 暴力血腥 violence | 35 | **0.879** | 0.790 | 0.781 |
-| 违法犯罪 illegal | 40 | 0.804 | **0.854** | 0.822 |
-| 广告垃圾 spam | 70 | 0.326 | **0.875** | 0.828 |
-| 隐私侵权 privacy | 25 | 0.571 | **0.714** | 0.650 |
+| 类别 | 支持数 | 百炼 `decision-model-preview` | StartLux | Jev `jev-preview` | Cloudflare `clef-omni` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 辱骂攻击 insult | 195 | 0.639 | **0.724** | 0.682 | 0.639 |
+| 歧视仇恨 hate | 115 | 0.228 | **0.550** | 0.525 | 0.478 |
+| 色情低俗 sexual | 45 | 0.714 | 0.774 | **0.791** | 0.691 |
+| 暴力血腥 violence | 35 | **0.879** | 0.790 | 0.781 | 0.756 |
+| 违法犯罪 illegal | 40 | 0.804 | 0.854 | 0.822 | **0.874** |
+| 广告垃圾 spam | 70 | 0.326 | 0.875 | 0.828 | **0.882** |
+| 隐私侵权 privacy | 25 | 0.571 | **0.714** | 0.650 | **0.714** |
+
+> 加粗为该类别最高 F1；privacy 由 StartLux 与 `clef-omni` 并列最高。
 
 > 数据口径：金标来自公开数据集原生标签映射，并非独立人工复核；违规比例 63.6% 高于真实业务，准确率不能直接外推到线上。详见 [REPORT.md](REPORT.md) 与 [data/README.md](data/README.md)。
 
@@ -122,6 +128,7 @@ cp .env.example .env
 #   DASHSCOPE_API_KEY + SYSTEMONE_WORKSPACE_ID   # 百炼 dashscope
 #   BAMBOONODE_API_KEY                           # BambooNode / StartLux
 #   JEVMODEL_API_KEY                             # Jev 官方网关
+#   CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID # Cloudflare Workers AI clef-omni
 
 npm start
 # 打开 http://127.0.0.1:8788
@@ -142,7 +149,11 @@ npm start
 | `JEVMODEL_API_KEY` | 跑 `jev` 必填 | Jev / TypeSafe 官方网关 Key |
 | `JEVMODEL_BASE_URL` | 否 | 默认 `https://api.typesafe.ai/v1` |
 | `JEVMODEL_MODELS` | 否 | 默认 `jev-preview,jev-latest` |
-| `MODERATION_PROVIDER` | 否 | 默认 `dashscope`；可选 `dashscope` / `bamboonode` / `jev` / `mock` |
+| `CLOUDFLARE_API_TOKEN` | 跑 `cloudflare` 必填 | Cloudflare API Token，需 Workers AI - Read/Edit 权限（`CLOUDFLARE_AUTH_TOKEN` 为兼容别名） |
+| `CLOUDFLARE_ACCOUNT_ID` | 跑 `cloudflare` 必填 | Cloudflare Account ID（Workers AI 页面获取） |
+| `CLOUDFLARE_BASE_URL` | 否 | 默认 `https://api.cloudflare.com/client/v4` |
+| `CLOUDFLARE_MODELS` | 否 | 默认 `clef-omni` |
+| `MODERATION_PROVIDER` | 否 | 默认 `dashscope`；可选 `dashscope` / `bamboonode` / `jev` / `cloudflare` / `mock` |
 | `MODERATION_MODEL` | 否 | 默认 `decision-model-preview` |
 | `PORT` / `HOST` | 否 | 默认 `8788` / `127.0.0.1` |
 | `RESULTS_DIR` | 否 | 结果目录，默认 `results/` |
@@ -181,6 +192,9 @@ node scripts/benchmark.mjs --provider bamboonode --model startlux-decision-27b-a
 # Jev 官方网关
 node scripts/benchmark.mjs --provider jev --model jev-preview --concurrency 4
 
+# Cloudflare Workers AI clef-omni
+node scripts/benchmark.mjs --provider cloudflare --model clef-omni --concurrency 4
+
 # 快速冒烟 / 指定输出目录 / 关闭 ensemble
 node scripts/benchmark.mjs --provider dashscope --limit 20 --concurrency 2 --out /tmp/bench
 node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
@@ -218,7 +232,7 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 │   ├── benchmark.mjs       # 跑分引擎 / 指标 / 结果持久化
 │   ├── dataset.mjs         # 数据集加载
 │   ├── moderation.mjs      # taxonomy / 判定与阈值
-│   ├── providers/          # dashscope / bamboonode / jev / mock
+│   ├── providers/          # dashscope / bamboonode / jev / cloudflare / mock
 │   └── lib/                # env / limiter
 ├── scripts/
 │   ├── prepare_data.py     # 数据集构建（Python 标准库）
@@ -228,7 +242,7 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 │   └── raw/                # 上游原始数据（不入库）
 ├── results/                # 跑分结果（*.json 不入库）
 ├── docs/                   # 契约 + 截图
-├── tests/                  # node:test（58 个）
+├── tests/                  # node:test（67 个）
 ├── REPORT.md               # 完整评测报告
 ├── LICENSE                 # MIT
 └── package.json
@@ -237,23 +251,25 @@ node scripts/benchmark.mjs --provider dashscope --limit 200 --pure
 ## ✅ 测试
 
 ```bash
-npm test          # node --test tests/  → 58 个测试
+npm test          # node --test tests/  → 67 个测试
 ```
 
-覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、历史结果摘要/分页/删除、静态资源与路径穿越防护。
+覆盖：taxonomy/解析、env 配置与回退、mock 跑分端到端、指标计算、HTTP 全部端点、Provider/Model 级联、Cloudflare clef-omni endpoint/信封解包/错误处理、历史结果摘要/分页/删除、静态资源与路径穿越防护。
 
 ## 🧠 设计说明
 
-- 所有真实 provider 都实现同一套 `judge(text)` 契约：`POST <endpoint>/systemone`，请求体 `{model, state, questions}`，返回结构化 `answers` 与 token 用量；
+- 所有真实 provider 都实现同一套 `judge(text)` 契约：`POST <endpoint>`，请求体 `{model, state, questions}`，返回结构化 `answers` 与 token 用量；Cloudflare Workers AI 走同一协议，只是响应包在 `{result,success,errors,messages}` 信封里，由 `server/providers/cloudflare.mjs` 解包并复用同一套解析/阈值逻辑；
 - 单次跑分对每个样本发 **4 个问题**（分类、攻击性、危害性、严重度），再按阈值组合成最终 verdict；`--pure` 可退化为 2 问 argmax 做消融；
 - 指标包含二分类 P/R/F1、Wilson 置信区间、分类别 macro/micro F1、来源细分、延迟分位数与吞吐；
 - 结果以 JSON 落盘，历史记录接口只返回摘要，前端对比视图无需加载逐条样本。
 
 ### 已知局限
 
-- StartLux 的 P50 约 1.5s、P95 约 8s，明显慢于百炼决策模型，生产使用时需更长超时与重试预算；
+- StartLux 的 P50 约 1.7s、P95 约 11.3s（并发 4），明显慢于其他模型，生产使用时需更长超时与重试预算；
 - 评测集是公开数据集的标签映射，不是独立人工复核；类别定义与真实业务存在差异；
 - Jev 仅跑了 `jev-preview`，`jev-latest` 未跑；
+- Cloudflare `clef-omni` 本次仅做默认「4 问 + 阈值」评测，未做 `--pure` 消融；
+- 百炼复测使用并发 16，与其余模型的并发 4 不同，吞吐数字不可直接横比；
 - 当前是单机 Demo 定位，未包含登录、多租户、任务队列与限流等生产化能力。
 
 ## 📄 License
@@ -264,6 +280,6 @@ npm test          # node --test tests/  → 58 个测试
 
 ## 🙏 致谢
 
-- [TypeSafe System One](https://typesafe.ai/) · [StartLux DecisionPivot](https://github.com/StartLuxLabs/DecisionPivot) · 阿里云百炼 · BambooNode · Jev
+- [TypeSafe System One](https://typesafe.ai/) · [StartLux DecisionPivot](https://github.com/StartLuxLabs/DecisionPivot) · 阿里云百炼 · BambooNode · Jev · [Cloudflare Workers AI clef-omni](https://developers.cloudflare.com/workers-ai/models/clef-omni/)
 - COLD / ToxiCN / Safety-Prompts / 中文垃圾短信 / NSFW 数据集作者
 - 所有指标与截图均由本项目脚本真实运行生成

@@ -50,6 +50,10 @@ test('getConfig：默认值', () => {
   assert.equal(cfg.jevBaseUrl, 'https://api.typesafe.ai/v1');
   assert.deepEqual(cfg.jevModels, ['jev-preview', 'jev-latest']);
   assert.equal(cfg.jevApiKeyConfigured, false);
+  assert.equal(cfg.cloudflareBaseUrl, 'https://api.cloudflare.com/client/v4');
+  assert.deepEqual(cfg.cloudflareModels, ['clef-omni']);
+  assert.equal(cfg.cloudflareApiTokenConfigured, false);
+  assert.equal(cfg.cloudflareAccountIdConfigured, false);
 });
 
 test('getConfig：从 env 覆盖 + 模型补齐', () => {
@@ -112,17 +116,54 @@ test('getConfig：jev 官方网关 key / provider 回退', () => {
   assert.equal(fallback.effectiveProvider, 'mock');
 });
 
+test('getConfig：cloudflare Workers AI token / account / provider 回退', () => {
+  const cfg = getConfig({
+    MODERATION_PROVIDER: 'cloudflare',
+    CLOUDFLARE_API_TOKEN: 'cf-test-token',
+    CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+    CLOUDFLARE_BASE_URL: 'https://api.cloudflare.com/client/v4/',
+    CLOUDFLARE_MODELS: 'clef-omni',
+  });
+  assert.equal(cfg.provider, 'cloudflare');
+  assert.equal(cfg.effectiveProvider, 'cloudflare');
+  assert.equal(cfg.cloudflareApiTokenConfigured, true);
+  assert.equal(cfg.cloudflareAccountIdConfigured, true);
+  assert.equal(cfg.cloudflareBaseUrl, 'https://api.cloudflare.com/client/v4');
+  assert.deepEqual(cfg.cloudflareModels, ['clef-omni']);
+
+  // 显式 cloudflare 但缺 token 或 account → 回退 mock（前端仍会给出明确配置错误）
+  assert.equal(getConfig({ MODERATION_PROVIDER: 'cloudflare' }).effectiveProvider, 'mock');
+  assert.equal(
+    getConfig({ MODERATION_PROVIDER: 'cloudflare', CLOUDFLARE_API_TOKEN: 't' }).effectiveProvider,
+    'mock',
+  );
+  // CLOUDFLARE_AUTH_TOKEN 作为兼容别名
+  const alias = getConfig({
+    MODERATION_PROVIDER: 'cloudflare',
+    CLOUDFLARE_AUTH_TOKEN: 'cf-auth-token',
+    CLOUDFLARE_ACCOUNT_ID: 'acc',
+  });
+  assert.equal(alias.effectiveProvider, 'cloudflare');
+  assert.equal(alias.cloudflareApiTokenConfigured, true);
+});
+
 test('redactConfig 不泄露 apiKey', () => {
   const cfg = getConfig({
     DASHSCOPE_API_KEY: 'sk-super-secret',
     BAMBOONODE_API_KEY: 'bn-super-secret',
     JEVMODEL_API_KEY: 'jevm-super-secret',
+    CLOUDFLARE_API_TOKEN: 'cf-super-secret',
+    CLOUDFLARE_ACCOUNT_ID: 'cf-account-secret',
   });
   const redacted = redactConfig(cfg);
   assert.ok(!JSON.stringify(redacted).includes('sk-super-secret'));
   assert.ok(!JSON.stringify(redacted).includes('bn-super-secret'));
   assert.ok(!JSON.stringify(redacted).includes('jevm-super-secret'));
+  assert.ok(!JSON.stringify(redacted).includes('cf-super-secret'));
+  assert.ok(!JSON.stringify(redacted).includes('cf-account-secret'));
   assert.equal(redacted.apiKeyConfigured, true);
   assert.equal(redacted.bamboonodeApiKeyConfigured, true);
   assert.equal(redacted.jevApiKeyConfigured, true);
+  assert.equal(redacted.cloudflareApiTokenConfigured, true);
+  assert.equal(redacted.cloudflareAccountIdConfigured, true);
 });

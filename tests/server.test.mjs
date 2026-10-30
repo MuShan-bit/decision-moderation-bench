@@ -239,18 +239,21 @@ test('GET /api/health', async () => {
   assert.equal(body.apiKeyConfigured, true);
   assert.equal(body.bamboonodeKeyConfigured, false);
   assert.equal(body.jevKeyConfigured, false);
+  assert.equal(body.cloudflareKeyConfigured, false);
+  assert.equal(body.cloudflareAccountConfigured, false);
   assert.equal(body.hasResults, false);
 });
 
 test('GET /api/config', async () => {
   const { res, body } = await getJson('/api/config');
   assert.equal(res.status, 200);
-  assert.deepEqual(body.providers, ['dashscope', 'bamboonode', 'jev', 'mock']);
+  assert.deepEqual(body.providers, ['dashscope', 'bamboonode', 'jev', 'cloudflare', 'mock']);
   assert.deepEqual(body.models, ['decision-model-preview']);
   assert.deepEqual(body.providerModels, {
     dashscope: ['decision-model-preview'],
     bamboonode: ['startlux-decision-27b-autothink'],
     jev: ['jev-preview', 'jev-latest'],
+    cloudflare: ['clef-omni'],
     mock: ['mock-rule-v1'],
   });
   assert.equal(body.defaultProvider, 'dashscope');
@@ -537,6 +540,16 @@ test('POST /api/benchmark 参数校验', async () => {
   assert.equal(jevNoKey.status, 400);
   const jevNoKeyBody = await jevNoKey.json();
   assert.equal(jevNoKeyBody.code, 'MISSING_API_KEY');
+
+  // cloudflare 未配置 token：明确提示（先校验 token）
+  const cloudflareNoKey = await fetch(`${baseUrl}/api/benchmark`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'cloudflare' }),
+  });
+  assert.equal(cloudflareNoKey.status, 400);
+  const cloudflareNoKeyBody = await cloudflareNoKey.json();
+  assert.equal(cloudflareNoKeyBody.code, 'MISSING_API_KEY');
 
   const badLimit = await fetch(`${baseUrl}/api/benchmark`, {
     method: 'POST',

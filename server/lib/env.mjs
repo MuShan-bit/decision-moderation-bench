@@ -23,6 +23,14 @@ export const DEFAULT_BAMBOONODE_MODELS = Object.freeze(['startlux-decision-27b-a
 export const DEFAULT_JEVMODEL_BASE_URL = 'https://api.typesafe.ai/v1';
 export const DEFAULT_JEVMODEL_MODELS = Object.freeze(['jev-preview', 'jev-latest']);
 
+// Cloudflare Workers AI（clef-omni，System One typed-decision 协议）：
+//   POST https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/cloudflare/clef-omni
+// 文档：https://developers.cloudflare.com/workers-ai/models/clef-omni/
+// 需要 CLOUDFLARE_API_TOKEN（Workers AI - Read/Edit 权限）与 CLOUDFLARE_ACCOUNT_ID。
+// 响应包在 Cloudflare 标准信封 {result,success,errors,messages} 中，result 为 {model,answers,usage}。
+export const DEFAULT_CLOUDFLARE_BASE_URL = 'https://api.cloudflare.com/client/v4';
+export const DEFAULT_CLOUDFLARE_MODELS = Object.freeze(['clef-omni']);
+
 /** 极简 dotenv 解析：支持注释、引号、行内 # 注释 */
 export function parseDotEnv(content) {
   const out = Object.create(null);
@@ -110,7 +118,9 @@ export function getConfig(env = process.env) {
 
   const requestedProvider = String(env.MODERATION_PROVIDER ?? '').trim();
   const normalizedProvider = requestedProvider === 'systemone' ? 'dashscope' : requestedProvider;
-  const configuredProvider = ['dashscope', 'bamboonode', 'jev', 'mock'].includes(normalizedProvider)
+  const configuredProvider = ['dashscope', 'bamboonode', 'jev', 'cloudflare', 'mock'].includes(
+    normalizedProvider,
+  )
     ? normalizedProvider
     : DEFAULT_PROVIDER;
   const apiKey = String(env.DASHSCOPE_API_KEY ?? '').trim();
@@ -126,6 +136,15 @@ export function getConfig(env = process.env) {
   const jevBaseUrl = normalizeBaseUrl(env.JEVMODEL_BASE_URL || env.JEV_BASE_URL, DEFAULT_JEVMODEL_BASE_URL);
   const jevApiKey = String(env.JEVMODEL_API_KEY || env.JEV_API_KEY || '').trim();
   const jevModels = parseList(env.JEVMODEL_MODELS || env.JEV_MODELS, DEFAULT_JEVMODEL_MODELS);
+  const cloudflareBaseUrl = normalizeBaseUrl(
+    env.CLOUDFLARE_BASE_URL,
+    DEFAULT_CLOUDFLARE_BASE_URL,
+  );
+  const cloudflareApiToken = String(
+    env.CLOUDFLARE_API_TOKEN || env.CLOUDFLARE_AUTH_TOKEN || '',
+  ).trim();
+  const cloudflareAccountId = String(env.CLOUDFLARE_ACCOUNT_ID ?? '').trim();
+  const cloudflareModels = parseList(env.CLOUDFLARE_MODELS, DEFAULT_CLOUDFLARE_MODELS);
   // 真实 provider 缺少 Key/Workspace 时回退 mock，保证离线也能打开 demo；显式指定时 API 仍会报配置缺失。
   const providerReady =
     configuredProvider === 'dashscope'
@@ -134,7 +153,9 @@ export function getConfig(env = process.env) {
         ? Boolean(bamboonodeApiKey)
         : configuredProvider === 'jev'
           ? Boolean(jevApiKey)
-          : true;
+          : configuredProvider === 'cloudflare'
+            ? Boolean(cloudflareApiToken && cloudflareAccountId)
+            : true;
   const effectiveProvider = providerReady ? configuredProvider : 'mock';
 
   const resultsDir = env.RESULTS_DIR
@@ -166,6 +187,12 @@ export function getConfig(env = process.env) {
     jevApiKey,
     jevApiKeyConfigured: Boolean(jevApiKey),
     jevModels,
+    cloudflareBaseUrl,
+    cloudflareApiToken,
+    cloudflareApiTokenConfigured: Boolean(cloudflareApiToken),
+    cloudflareAccountId,
+    cloudflareAccountIdConfigured: Boolean(cloudflareAccountId),
+    cloudflareModels,
     model,
     models,
     provider: configuredProvider,
@@ -188,7 +215,11 @@ export function redactConfig(cfg = getConfig()) {
     bamboonodeApiKey: cfg.bamboonodeApiKey ? '***configured***' : '',
     jevApiKey: cfg.jevApiKey ? '***configured***' : '',
     workspaceId: cfg.workspaceId ? '***configured***' : '',
+    cloudflareApiToken: cfg.cloudflareApiToken ? '***configured***' : '',
+    cloudflareAccountId: cfg.cloudflareAccountId ? '***configured***' : '',
     apiKeyConfigured: Boolean(cfg.apiKey),
     workspaceConfigured: Boolean(cfg.workspaceId),
+    cloudflareApiTokenConfigured: Boolean(cfg.cloudflareApiToken),
+    cloudflareAccountIdConfigured: Boolean(cfg.cloudflareAccountId),
   };
 }

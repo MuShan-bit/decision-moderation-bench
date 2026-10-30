@@ -40,6 +40,7 @@ const HELP = `内容审核跑分 CLI（零依赖）
   node scripts/benchmark.mjs --provider dashscope --model decision-model-preview --limit 200 --concurrency 4
   node scripts/benchmark.mjs --provider bamboonode --model startlux-decision-27b-autothink --limit 200 --concurrency 4
   node scripts/benchmark.mjs --provider jev --model jev-preview --limit 200 --concurrency 4
+  node scripts/benchmark.mjs --provider cloudflare --model clef-omni --limit 200 --concurrency 4
 `;
 
 function fail(message) {
@@ -135,6 +136,12 @@ async function main() {
   if (providerName === 'jev' && !cfg.jevApiKey) {
     fail('JEVMODEL_API_KEY 未配置，无法使用 Jev 官方网关；请在 .env 中配置该 Key');
   }
+  if (providerName === 'cloudflare' && !cfg.cloudflareApiToken) {
+    fail('CLOUDFLARE_API_TOKEN 未配置，无法使用 Cloudflare Workers AI clef-omni；请在 .env 中配置 API Token');
+  }
+  if (providerName === 'cloudflare' && !cfg.cloudflareAccountId) {
+    fail('CLOUDFLARE_ACCOUNT_ID 未配置，无法使用 Cloudflare Workers AI；请在 .env 中配置 Account ID');
+  }
 
   let model;
   try {
@@ -182,13 +189,20 @@ async function main() {
             apiKey: cfg.jevApiKey,
             baseUrl: cfg.jevBaseUrl,
           })
-        : createProvider({
-            ...providerOptions,
-            apiKey: cfg.apiKey,
-            workspaceId: cfg.workspaceId,
-            region: cfg.systemoneRegion,
-            systemoneBaseUrl: cfg.systemoneBaseUrl,
-          });
+        : providerName === 'cloudflare'
+          ? createProvider({
+              ...providerOptions,
+              apiToken: cfg.cloudflareApiToken,
+              accountId: cfg.cloudflareAccountId,
+              baseUrl: cfg.cloudflareBaseUrl,
+            })
+          : createProvider({
+              ...providerOptions,
+              apiKey: cfg.apiKey,
+              workspaceId: cfg.workspaceId,
+              region: cfg.systemoneRegion,
+              systemoneBaseUrl: cfg.systemoneBaseUrl,
+            });
 
   const total = limit === null ? dataset.samples.length : Math.min(limit, dataset.samples.length);
   const runId = nextRunId(resultsDir);

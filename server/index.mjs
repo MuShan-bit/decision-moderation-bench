@@ -163,13 +163,20 @@ function getProviderFor(providerName, model) {
               apiKey: cfg.jevApiKey,
               baseUrl: cfg.jevBaseUrl,
             })
-          : createProvider({
-              ...common,
-              apiKey: cfg.apiKey,
-              workspaceId: cfg.workspaceId,
-              region: cfg.systemoneRegion,
-              systemoneBaseUrl: cfg.systemoneBaseUrl,
-            });
+          : providerName === 'cloudflare'
+            ? createProvider({
+                ...common,
+                apiToken: cfg.cloudflareApiToken,
+                accountId: cfg.cloudflareAccountId,
+                baseUrl: cfg.cloudflareBaseUrl,
+              })
+            : createProvider({
+                ...common,
+                apiKey: cfg.apiKey,
+                workspaceId: cfg.workspaceId,
+                region: cfg.systemoneRegion,
+                systemoneBaseUrl: cfg.systemoneBaseUrl,
+              });
   } catch (error) {
     if (error instanceof ProviderConfigError) {
       throw new HttpError(400, error.message, error.code);
@@ -221,6 +228,21 @@ function resolveProviderName(requested) {
       'JEVMODEL_API_KEY 未配置，无法使用 Jev 官方网关；请在 .env 中配置该 Key',
       'MISSING_API_KEY',
     );
+  } else if (name === 'cloudflare') {
+    if (!cfg.cloudflareApiToken) {
+      throw new HttpError(
+        400,
+        'CLOUDFLARE_API_TOKEN 未配置，无法使用 Cloudflare Workers AI clef-omni；请在 .env 中配置 API Token',
+        'MISSING_API_KEY',
+      );
+    }
+    if (!cfg.cloudflareAccountId) {
+      throw new HttpError(
+        400,
+        'CLOUDFLARE_ACCOUNT_ID 未配置，无法使用 Cloudflare Workers AI；请在 .env 中配置 Account ID',
+        'MISSING_ACCOUNT_ID',
+      );
+    }
   }
   return name;
 }
@@ -287,6 +309,8 @@ function handleHealth(req, res) {
     workspaceConfigured: cfg.workspaceConfigured,
     bamboonodeKeyConfigured: cfg.bamboonodeApiKeyConfigured,
     jevKeyConfigured: cfg.jevApiKeyConfigured,
+    cloudflareKeyConfigured: cfg.cloudflareApiTokenConfigured,
+    cloudflareAccountConfigured: cfg.cloudflareAccountIdConfigured,
     hasResults: hasLatestResult(cfg.resultsDir),
     uptimeMs: Math.round(process.uptime() * 1000),
   });

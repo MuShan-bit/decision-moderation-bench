@@ -6,4 +6,5 @@ import './metrics.test.mjs';
 import './dataset.test.mjs';
 import './mock.test.mjs';
 import './providers.test.mjs';
+import './cloudflare.test.mjs';
 import './server.test.mjs';

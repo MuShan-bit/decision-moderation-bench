@@ -199,9 +199,19 @@ function parseRetryAfterMs(headerValue) {
 }
 
 function bodySnippet(bodyText, data) {
+  // Cloudflare 标准错误信封：{success:false, errors:[{code,message}], messages:[]}
+  const firstError = Array.isArray(data?.errors)
+    ? data.errors.find((item) => typeof item?.message === 'string' && item.message.trim())
+    : null;
+  if (firstError) return firstError.message.trim().slice(0, 240);
   const message = data?.error?.message ?? data?.message;
   if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 240);
   return String(bodyText ?? '').slice(0, 240);
+}
+
+/** 默认响应适配：System One 直接返回 {answers,usage}；Cloudflare 等网关可用 unwrap 去掉信封 */
+function identityResponse(data) {
+  return data;
 }
 
 /**
@@ -215,6 +225,7 @@ function bodySnippet(bodyText, data) {
  *   model?: string,
  *   timeoutMs?: number,
  *   maxRetries?: number,
+ *   unwrap?: (data: any) => any,
  *   fetchImpl?: typeof fetch,
  * }} options
  */
@@ -228,6 +239,8 @@ export function createSystemOneProvider(options = {}) {
   const maxRetries = Math.max(0, Math.floor(Number(options.maxRetries) ?? 3));
   const ensemble = options.ensemble !== false;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
+  // 网关响应信封不同（如 Cloudflare REST {result,...}），由 provider 传入适配函数归一化
+  const unwrap = typeof options.unwrap === 'function' ? options.unwrap : identityResponse;
   // 并发由 benchmark / HTTP 层控制，这里放宽上限避免成为瓶颈
   const limiter = createLimiter(Math.max(32, Math.floor(Number(options.concurrency) || 32)));
   let notFoundHint = false;
@@ -271,6 +284,10 @@ export function createSystemOneProvider(options = {}) {
             console.warn(
               '[bamboonode] 接口 404：请确认 BAMBOONODE_BASE_URL 指向 https://api.bamboonode.dev/v1，且模型名在该网关可用',
             );
+          } else if (name === 'cloudflare') {
+            console.warn(
+              `[cloudflare] 接口 404：请确认 CLOUDFLARE_ACCOUNT_ID 正确、CLOUDFLARE_API_TOKEN 具备 Workers AI 权限（Workers AI - Read/Edit），且 @cf/cloudflare/clef-omni 对当前账号可用`,
+            );
           } else {
             console.warn(
               `[${name}] 接口 404：请确认 SYSTEMONE_WORKSPACE_ID 正确、地域为 cn-beijing，且账号已开通决策模型权限`,
@@ -288,7 +305,26 @@ export function createSystemOneProvider(options = {}) {
         };
       }
 
-      const parsed = parseSystemOneResponse(data, { thresholds: options.thresholds, ensemble });
+      // 各网关可能把响应包在信封里（Cloudflare: {result,success,errors,messages}）
+      let payload;
+      try {
+        payload = unwrap(data);
+      } catch {
+        payload = data;
+      }
+
+      // 少数网关会以 HTTP 200 返回 {success:false, errors:[...]}，优先报出真实错误
+      if (payload && typeof payload === 'object' && payload.success === false) {
+        return {
+          ok: false,
+          status: response.status,
+          retryable: false,
+          error: `决策模型响应失败：${bodySnippet(bodyText, payload)}`,
+          bodyText,
+        };
+      }
+
+      const parsed = parseSystemOneResponse(payload, { thresholds: options.thresholds, ensemble });
       if (!parsed.verdict) {
         return {
           ok: false,
@@ -298,7 +334,8 @@ export function createSystemOneProvider(options = {}) {
           bodyText,
         };
       }
-      const inputTokens = num(data?.usage?.input_tokens, 0);
+      const inputTokens = num(payload?.usage?.input_tokens, 0);
+      const outputTokens = num(payload?.usage?.output_tokens, 0);
       return {
         ok: true,
         status: response.status,
@@ -306,11 +343,11 @@ export function createSystemOneProvider(options = {}) {
         decision: parsed.decision,
         tokens: {
           prompt: Math.round(inputTokens),
-          completion: 0,
-          total: Math.round(inputTokens),
+          completion: Math.round(outputTokens),
+          total: Math.round(inputTokens + outputTokens),
         },
-        serverLatencyMs: num(data?.latency_ms, 0),
-        requestId: data?.request_id ?? null,
+        serverLatencyMs: num(payload?.latency_ms, 0),
+        requestId: payload?.request_id ?? null,
         bodyText,
       };
     } catch (error) {

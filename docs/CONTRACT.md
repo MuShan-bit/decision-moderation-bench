@@ -2,7 +2,7 @@
 
 项目：`decision-moderation-bench` —— 基于决策模型（TypeSafe System One / typed-decision 协议）的中文内容安全审核跑分台：
 Web 控制台 + 真实数据集 + 速度/准确率跑分。
-真实 provider：`dashscope`（百炼 DashScope 决策模型 `decision-model-preview`）、`bamboonode`（StartLux `startlux-decision-27b-autothink`）、`jev`（Jev 官方网关 `jev-preview` / `jev-latest`）；`mock` 仅离线演示。
+真实 provider：`dashscope`（百炼 DashScope 决策模型 `decision-model-preview`）、`bamboonode`（StartLux `startlux-decision-27b-autothink`）、`jev`（Jev 官方网关 `jev-preview` / `jev-latest`）、`cloudflare`（Cloudflare Workers AI `clef-omni`）；`mock` 仅离线演示。
 
 工作目录（workspace root）：`/Users/mushan/Downloads/untitled folder 2`
 
@@ -91,19 +91,29 @@ Web 控制台 + 真实数据集 + 速度/准确率跑分。
 
 服务默认 `http://127.0.0.1:8788`，静态页面从 `public/` 提供。
 
-- `GET /api/health` → `{"ok":true,"provider":"dashscope","model":"decision-model-preview","dataset":{"total":825},"apiKeyConfigured":true,"workspaceConfigured":true,"bamboonodeKeyConfigured":false,"jevKeyConfigured":false,"hasResults":true}`
-- `GET /api/config` → `{"providers":["dashscope","bamboonode","jev","mock"],"models":["decision-model-preview"],"providerModels":{"dashscope":["decision-model-preview"],"bamboonode":["startlux-decision-27b-autothink"],"jev":["jev-preview","jev-latest"],"mock":["mock-rule-v1"]},"defaultProvider":"dashscope","defaultModel":"decision-model-preview","taxonomy":[{"code":"safe","label":"正常"},...],"concurrencyOptions":[1,2,4,8,16],"latestResultId":"..."}`（前端用 `providerModels` 做 Provider→Model 级联筛选）
+- `GET /api/health` → `{"ok":true,"provider":"dashscope","model":"decision-model-preview","dataset":{"total":825},"apiKeyConfigured":true,"workspaceConfigured":true,"bamboonodeKeyConfigured":false,"jevKeyConfigured":false,"cloudflareKeyConfigured":false,"cloudflareAccountConfigured":false,"hasResults":true}`
+- `GET /api/config` → `{"providers":["dashscope","bamboonode","jev","cloudflare","mock"],"models":["decision-model-preview"],"providerModels":{"dashscope":["decision-model-preview"],"bamboonode":["startlux-decision-27b-autothink"],"jev":["jev-preview","jev-latest"],"cloudflare":["clef-omni"],"mock":["mock-rule-v1"]},"defaultProvider":"dashscope","defaultModel":"decision-model-preview","taxonomy":[{"code":"safe","label":"正常"},...],"concurrencyOptions":[1,2,4,8,16],"latestResultId":"..."}`（前端用 `providerModels` 做 Provider→Model 级联筛选）
 - `GET /api/dataset?offset=0&limit=50&filter=all|violation|safe|error` → `{"total":820,"items":[{sample fields...}]}`（不含 NSFW 原文时可选，但默认返回；sensitive 字段供前端打码）
 - `GET /api/results?page=1&pageSize=6` → `{"total":12,"page":1,"pageSize":6,"totalPages":2,"latestResultId":"bench-...","runs":[{"runId":"bench-...","provider":"bamboonode","model":"startlux-decision-27b-autothink","simulated":false,"startedAt":"...","finishedAt":"...","sampleCount":825,"datasetTotal":825,"limit":825,"concurrency":4,"accuracy":0.8376,"precision":0.8654,"recall":0.8819,"f1":0.8736,"macroF1":0.754,"p50":1533,"p95":7977.6,"throughputRps":1.58,"tokensTotal":699963,"errors":0,"perCategory":{...}}]}`：历史跑分分页摘要（按结束时间倒序，不含 records 正文），供「跑分记录 / 模型对比」使用；`page` 默认 1，`pageSize` 默认 10、上限 50，越界 page 自动夹到最后一页
 - `GET /api/results/latest` → 最新 bench result（结构见第 6 节）或 `null`
 - `GET /api/results/:runId` → 结果
 - `DELETE /api/results/:runId` → `{"ok":true,"runId":"...","latestResultId":"..."}`：删除一条历史跑分；若删除的是 latest 指向记录，自动回退到剩余最新一条（没有则删除 `latest.json`），不存在返回 404
-- `POST /api/benchmark` body `{"limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
+- `POST /api/benchmark` body `{"limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；`provider=cloudflare` 时取 `clef-omni`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
 - `GET /api/benchmark/:runId` → `{"runId":"...","status":"queued|running|done|error","done":123,"total":820,"resultId":"bench-...","error":null,"startedAt":"...","elapsedMs":12345}`
 - `POST /api/moderate` body `{"text":"...","provider":"dashscope"}`（或 `bamboonode` + 对应 `model`）→ `{"verdict":{...},"latencyMs":830,"provider":"dashscope","model":"decision-model-preview","parseError":false,"raw":"..."}`
 - `GET /api/results/:runId/export.csv`（可选，前端也可本地生成）
 
 静态路径：`/` → `public/index.html`；`/app.js`、`/styles.css` 等。
+
+### 4.1 Cloudflare Workers AI（clef-omni）适配
+
+Cloudflare 与其余真实 provider 共用 System One typed-decision 请求体 `{model, state, questions}`（questions 支持 noul / choice / score），差异仅三点：
+
+- endpoint：`POST https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/cloudflare/clef-omni`（`CLOUDFLARE_BASE_URL` 可覆盖前缀，默认 `https://api.cloudflare.com/client/v4`）；
+- 鉴权：`Authorization: Bearer $CLOUDFLARE_API_TOKEN`（API Token 需 Workers AI - Read/Edit 权限；`CLOUDFLARE_AUTH_TOKEN` 为兼容别名）；
+- 响应：Cloudflare 标准信封 `{"result":{"model","answers","usage"},"success":true,"errors":[],"messages":[]}`。provider 先取出 `result`，再复用与 dashscope 相同的 `answers` 解析与阈值逻辑；`usage.input_tokens` / `usage.output_tokens` 分别计入 prompt / completion（clef 决策模型不生成文本，`output_tokens` 通常为 0）。
+
+配置：`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` 必填，`CLOUDFLARE_MODELS` 默认 `clef-omni`；缺任一项时 `/api/health.cloudflareKeyConfigured` / `cloudflareAccountConfigured` 为 false，显式选择 `cloudflare` 会返回 `400 MISSING_API_KEY` / `400 MISSING_ACCOUNT_ID`。文档：<https://developers.cloudflare.com/workers-ai/models/clef-omni/>。
 
 ## 5. 评判 prompt（后端实现，可微调，但需保持语气/结构）
 

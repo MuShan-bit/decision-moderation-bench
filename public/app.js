@@ -266,6 +266,15 @@
       warn.hidden = false;
       return;
     }
+    if (
+      providerName === 'cloudflare' &&
+      (health.cloudflareKeyConfigured === false || health.cloudflareAccountConfigured === false)
+    ) {
+      warn.textContent =
+        '未检测到 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，选择该 provider 会返回配置错误；请在 .env 中配置 Cloudflare Workers AI 凭据。';
+      warn.hidden = false;
+      return;
+    }
     if (providerName === 'dashscope' && health.apiKeyConfigured === false) {
       warn.textContent = '未检测到 DASHSCOPE_API_KEY（百炼），选择 dashscope 会返回配置错误。';
       warn.hidden = false;

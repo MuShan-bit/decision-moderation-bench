@@ -30,7 +30,7 @@
 - 输出是结构化概率 + 置信度，不需要解析自然语言，**parseFail 可以做到 0**；
 - 百炼决策模型输入 token 当前免费，RPM 1200 / TPM 2,000,000，适合批量跑分与在线一审。
 
-普通 OpenAI 兼容 chat 模型在百炼 Key 下会被限流（429）或权限拒绝，且需要生成 JSON、解析失败率不可控，因此不用于主对比。当前提供四个 provider：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev / TypeSafe 官方网关）、`mock`（离线演示）；三个真实服务协议相同，仅 endpoint / Key / 模型名不同。前端按 `providerModels` 做 Provider→Model 级联，后端对跨 provider 的模型组合直接返回 400。
+普通 OpenAI 兼容 chat 模型在百炼 Key 下会被限流（429）或权限拒绝，且需要生成 JSON、解析失败率不可控，因此不用于主对比。当前提供五个 provider：`dashscope`（百炼 DashScope）、`bamboonode`（StartLux）、`jev`（Jev / TypeSafe 官方网关）、`cloudflare`（Cloudflare Workers AI `clef-omni`）、`mock`（离线演示）；四个真实服务协议相同，仅 endpoint / Key / 模型名不同（Cloudflare 响应额外包一层 `{result,success,errors,messages}` 信封，由 provider 解包）。其中 `clef-omni` 已接入但本仓库未配置 Cloudflare 凭据，未参与本报告对比。前端按 `providerModels` 做 Provider→Model 级联，后端对跨 provider 的模型组合直接返回 400。
 
 ### 1.2 接口与请求结构
 

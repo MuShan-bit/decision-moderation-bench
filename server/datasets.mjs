@@ -2,7 +2,7 @@
 //
 // 核心规则：
 // - 文本评测集可用任意 provider；
-// - 图像评测集（text-image / nsfw-image / 自定义含 image 的集合）当前只允许 cloudflare（clef-omni）；
+// - 图像评测集（text-image / unsafebench / nsfw-image / 自定义含 image 的集合）当前只允许 cloudflare（clef-omni）；
 // - NSFW 实拍图像集只在本地存在（data/real-images 不入库），未导入时给出可执行的修复提示。
 
 import fs from 'node:fs';
@@ -44,6 +44,8 @@ function summarize(selection) {
     kind: selection.kind,
     modality: selection.modality,
     description: selection.description,
+    labelMode: selection.labelMode,
+    labels: selection.labels ? [...selection.labels] : null,
     committed: selection.committed === true,
     localOnly: selection.localOnly === true,
     providers: selection.providers ? [...selection.providers] : null,
@@ -67,15 +69,18 @@ function unavailableHint(id) {
   if (id === 'text-image') {
     return '仓库缺少 data/images/samples.jsonl，请检查数据文件是否完整';
   }
+  if (id === 'unsafebench') {
+    return '先运行 python3 scripts/prepare_unsafebench.py --parquet data/raw/unsafebench/data/test-00000-of-00001.parquet 生成本地二分类图像集（图片不入库）';
+  }
   return '请检查 DATASET_PATH / DATASET 配置';
 }
 
 /** 基于档案或自定义路径构造一个选择对象（不加载样本） */
-function buildSelection(cfg, { id, name, kind, modality, description, providers, path: filePath, imagesDir, committed, localOnly }) {
+function buildSelection(cfg, { id, name, kind, modality, description, providers, path: filePath, imagesDir, committed, localOnly, labelMode }) {
   const available = Boolean(filePath) && fs.existsSync(filePath);
   let dataset = null;
   if (available) {
-    dataset = getDataset({ filePath });
+    dataset = getDataset({ filePath, labelMode });
     // 文件存在但坏行全被跳过时 getDataset 会回退到内置样本：此时视为不可用
     if (dataset.fallback || !dataset.samples.length) dataset = null;
   }
@@ -89,6 +94,8 @@ function buildSelection(cfg, { id, name, kind, modality, description, providers,
     kind,
     modality: resolvedModality,
     description,
+    labelMode: labelMode === 'binary' ? 'binary' : 'taxonomy',
+    labels: labelMode === 'binary' ? ['safe', 'unsafe'] : null,
     providers: resolvedProviders,
     committed: committed === true,
     localOnly: localOnly === true,
@@ -123,6 +130,7 @@ function selectionFromCustom(cfg) {
     modality: null,
     description: '通过 DATASET_PATH 指定的数据集',
     providers: null,
+    labelMode: 'taxonomy',
     path: cfg.datasetPath,
     imagesDir: cfg.imagesDir,
     committed: false,
@@ -142,7 +150,7 @@ export function getDefaultDataset(cfg) {
 }
 
 /**
- * 解析请求的数据集：不传 id 时用配置默认值；支持 text / text-image / nsfw-image / custom。
+ * 解析请求的数据集：不传 id 时用配置默认值；支持 text / text-image / unsafebench / nsfw-image / custom。
  * 不可用或未知时抛错（error.status / error.code 供 HTTP 层使用）。
  */
 export function resolveDatasetSelection(cfg, requestedId) {
@@ -203,6 +211,7 @@ export function resolveCustomDataset(filePath, imagesDir) {
       modality: null,
       description: '自定义路径数据集',
       providers: null,
+      labelMode: 'taxonomy',
       path: path.resolve(filePath),
       imagesDir: imagesDir ? path.resolve(imagesDir) : path.dirname(path.resolve(filePath)),
       committed: false,

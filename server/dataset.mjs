@@ -3,7 +3,7 @@
 // 此时用 10 条内置样本兜底，并在 API 响应里明确标注 fallback。
 import fs from 'node:fs';
 import { getConfig } from './lib/env.mjs';
-import { TAXONOMY_CODES } from './moderation.mjs';
+import { BINARY_UNSAFE_CODE, TAXONOMY_CODES, isBinaryLabelMode } from './moderation.mjs';
 
 /** 图片样本文件名白名单：只允许 basename（png/jpg/jpeg/webp），防止目录穿越 */
 const IMAGE_NAME_RE = /^[A-Za-z0-9._-]+\.(png|jpe?g|webp)$/i;
@@ -114,8 +114,9 @@ export const BUILTIN_SAMPLES = Object.freeze([
   },
 ].map((s) => Object.freeze({ ...s, gold: Object.freeze(s.gold) })));
 
-/** 归一化一条原始样本；非法返回 null */
-export function normalizeSample(raw) {
+/** 归一化一条原始样本；非法返回 null。binary 模式只保留 safe/unsafe，忽略细分类别 */
+export function normalizeSample(raw, options = {}) {
+  const binary = isBinaryLabelMode(options.labelMode);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 
   const id = typeof raw.id === 'string' ? raw.id.trim() : '';
@@ -150,18 +151,24 @@ export function normalizeSample(raw) {
     return null;
   }
 
-  let categories = Array.isArray(goldIn.categories)
-    ? goldIn.categories
-        .filter((c) => typeof c === 'string')
-        .map((c) => c.trim().toLowerCase())
-        .filter((c) => TAXONOMY_CODES.includes(c))
-    : [];
-
-  if (!violation) {
-    categories = ['safe'];
+  let categories;
+  if (binary) {
+    // 二分类数据集只有 safe / unsafe；原始细分类别不参与金标
+    categories = violation ? [BINARY_UNSAFE_CODE] : ['safe'];
   } else {
-    categories = [...new Set(categories.filter((c) => c !== 'safe'))];
-    if (!categories.length) return null;
+    categories = Array.isArray(goldIn.categories)
+      ? goldIn.categories
+          .filter((c) => typeof c === 'string')
+          .map((c) => c.trim().toLowerCase())
+          .filter((c) => TAXONOMY_CODES.includes(c))
+      : [];
+
+    if (!violation) {
+      categories = ['safe'];
+    } else {
+      categories = [...new Set(categories.filter((c) => c !== 'safe'))];
+      if (!categories.length) return null;
+    }
   }
 
   const sample = {
@@ -182,14 +189,14 @@ export function normalizeSample(raw) {
 }
 
 /** 读取 jsonl 文件；坏行跳过并计数 */
-export function readSamplesFile(filePath) {
+export function readSamplesFile(filePath, options = {}) {
   const content = fs.readFileSync(filePath, 'utf8');
   const samples = [];
   let invalidLines = 0;
   for (const line of content.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
-      const sample = normalizeSample(JSON.parse(line));
+      const sample = normalizeSample(JSON.parse(line), options);
       if (sample) samples.push(sample);
       else invalidLines += 1;
     } catch {
@@ -226,20 +233,22 @@ function fallbackDataset(filePath, error, invalidLines = 0) {
  */
 export function getDataset(options = {}) {
   const filePath = options.filePath || getConfig().datasetPath;
+  const labelMode = options.labelMode === 'binary' ? 'binary' : 'taxonomy';
+  const cacheKey = `${filePath}|${labelMode}`;
   const stat = statSafe(filePath);
 
   if (!stat || !stat.isFile()) {
-    cache.delete(filePath);
+    cache.delete(cacheKey);
     return fallbackDataset(filePath, `数据集文件不存在：${filePath}（当前使用内置兜底样本）`);
   }
 
-  const cached = cache.get(filePath);
+  const cached = cache.get(cacheKey);
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
     return cached.dataset;
   }
 
   try {
-    const { samples, invalidLines } = readSamplesFile(filePath);
+    const { samples, invalidLines } = readSamplesFile(filePath, { labelMode });
     let dataset;
     if (!samples.length) {
       dataset = fallbackDataset(
@@ -257,7 +266,7 @@ export function getDataset(options = {}) {
         path: filePath,
       };
     }
-    cache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, dataset });
+    cache.set(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size, dataset });
     return dataset;
   } catch (error) {
     cache.delete(filePath);

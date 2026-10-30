@@ -724,11 +724,11 @@ test('图像数据集：/api/dataset 携带 image，非 cloudflare 跑分返回 
   }
 });
 
-test('数据集档案：/api/config 暴露 text / text-image / nsfw-image + custom', async () => {
+test('数据集档案：/api/config 暴露 text / text-image / unsafebench / nsfw-image + custom', async () => {
   const { res, body } = await getJson('/api/config');
   assert.equal(res.status, 200);
   const ids = body.datasets.map((item) => item.id);
-  for (const id of ['text', 'text-image', 'nsfw-image', 'custom']) {
+  for (const id of ['text', 'text-image', 'unsafebench', 'nsfw-image', 'custom']) {
     assert.ok(ids.includes(id), `缺少数据集 ${id}`);
   }
   assert.equal(body.defaultDataset, 'custom');
@@ -736,6 +736,9 @@ test('数据集档案：/api/config 暴露 text / text-image / nsfw-image + cust
   assert.equal(textImage.modality, 'image');
   assert.deepEqual(textImage.providers, ['cloudflare']);
   assert.equal(textImage.available, true);
+  const unsafeBench = body.datasets.find((item) => item.id === 'unsafebench');
+  assert.equal(unsafeBench.labelMode, 'binary');
+  assert.deepEqual(unsafeBench.labels, ['safe', 'unsafe']);
   const text = body.datasets.find((item) => item.id === 'text');
   assert.equal(text.modality, 'text');
   assert.equal(text.providers, null);

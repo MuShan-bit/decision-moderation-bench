@@ -170,7 +170,7 @@ export function getConfig(env = process.env) {
     : path.join(ROOT, 'results');
 
   // 评测集选择：
-  // - DATASET=text / text-image / nsfw-image 使用内置档案路径；
+  // - DATASET=text / text-image / unsafebench / nsfw-image 使用内置档案路径；
   // - DATASET_PATH 显式指向自定义数据集（若正好等于内置档案则映射回该 id）；
   // - 两者都未设置时默认 text（data/eval）。
   const datasetEnvId = String(env.DATASET ?? '').trim();
@@ -185,7 +185,7 @@ export function getConfig(env = process.env) {
   const datasetId = matchedProfile?.id || 'custom';
   const datasetEnvError =
     datasetEnvId && !profileById(datasetEnvId)
-      ? `未知 DATASET：${datasetEnvId}（可选 text / text-image / nsfw-image）；已${env.DATASET_PATH ? '忽略并使用 DATASET_PATH' : '回退到 text'}`
+      ? `未知 DATASET：${datasetEnvId}（可选 text / text-image / nsfw-image / unsafebench）；已${env.DATASET_PATH ? '忽略并使用 DATASET_PATH' : '回退到 text'}`
       : null;
   // 图像样本默认与数据集清单同目录（image 字段只存 basename），可用 IMAGES_DIR 覆盖
   const imagesDir = env.IMAGES_DIR

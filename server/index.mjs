@@ -313,6 +313,7 @@ function handleHealth(req, res) {
       name: selection.name,
       kind: selection.kind,
       modality: selection.modality,
+      labelMode: selection.labelMode,
       total: selection.sampleCount,
       imageCount: selection.imageCount,
       available: selection.available,
@@ -500,7 +501,7 @@ function handleStartBenchmark(req, res) {
   return (async () => {
     const cfg = getConfig();
     const body = await readJsonBody(req);
-    // 数据集选择：body.dataset 为 text / text-image / nsfw-image / custom；省略时用配置默认值
+    // 数据集选择：body.dataset 为 text / text-image / unsafebench / nsfw-image / custom；省略时用配置默认值
     const selection = resolveDatasetSelection(cfg, body.dataset);
     const dataset = {
       samples: selection.samples,
@@ -567,6 +568,7 @@ function handleStartBenchmark(req, res) {
         dataset: selection.id,
         datasetName: selection.name,
         datasetKind: selection.kind,
+        labelMode: selection.labelMode,
         modality: imageCount > 0 ? 'image' : 'text',
         imageCount,
       },
@@ -591,6 +593,7 @@ function handleStartBenchmark(req, res) {
             name: selection.name,
             kind: selection.kind,
             modality: selection.modality,
+            labelMode: selection.labelMode,
           },
           datasetFallback: dataset.fallback === true,
           onProgress: ({ done }) => {

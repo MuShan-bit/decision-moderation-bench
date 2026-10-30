@@ -35,7 +35,7 @@ const HELP = `内容审核跑分 CLI（零依赖）
   -c, --concurrency <n>    并发数 1-${MAX_CONCURRENCY}（默认：${DEFAULT_CONCURRENCY}）
   -p, --provider <name>    provider：${PROVIDER_NAMES.join(' | ')}（默认取 .env MODERATION_PROVIDER，否则 dashscope）
   -m, --model <name>       模型名（默认取该 provider 的默认模型；bamboonode 可选 typesafe/jev-1.14 等）
-      --dataset <name|path> 数据集：text（默认文本）/ text-image（截图）/ nsfw-image（本地实拍）/ 自定义 jsonl 路径
+      --dataset <name|path> 数据集：text（默认文本）/ text-image（截图）/ unsafebench（二分类图像）/ nsfw-image（本地实拍）/ 自定义 jsonl 路径
       --images-dir <dir>   图像样本目录（默认：数据集所在目录）
       --out <dir>          结果输出目录（默认 results/）
       --pure               决策模型消融：关闭 attack/harmful 组合，仅 category 做 argmax
@@ -174,7 +174,7 @@ async function main() {
     fail(`--concurrency 必须是 1-${MAX_CONCURRENCY} 的整数`);
   }
 
-  // 数据集：支持内置档案名（text / text-image / nsfw-image）或自定义 jsonl 路径
+  // 数据集：支持内置档案名（text / text-image / unsafebench / nsfw-image）或自定义 jsonl 路径
   let selection;
   try {
     const preset = args.dataset && profileById(args.dataset);
@@ -246,7 +246,7 @@ async function main() {
     console.log(`model      : ${provider.model}`);
     console.log(`样本       : ${total} / ${dataset.samples.length}（并发 ${concurrency}）`);
     console.log(
-      `数据集     : ${selection.id} · ${selection.name}（${selection.kind}）`,
+      `数据集     : ${selection.id} · ${selection.name}（${selection.kind} / ${selection.labelMode === 'binary' ? 'safe-unsafe 二分类' : '细分类别'}）`,
     );
     console.log(
       `数据集路径 : ${
@@ -278,6 +278,7 @@ async function main() {
       name: selection.name,
       kind: selection.kind,
       modality: selection.modality,
+      labelMode: selection.labelMode,
     },
     datasetFallback: dataset.fallback === true,
     takenRunIds: new Set([runId]),

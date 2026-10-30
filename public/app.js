@@ -15,6 +15,7 @@
     illegal: '#a78bfa',
     spam: '#fbbf24',
     privacy: '#38bdf8',
+    unsafe: '#f97316',
   };
 
   const state = {
@@ -36,7 +37,7 @@
     categories: [],
     // provider -> 可用模型列表（后端 /api/config 下发，用于级联筛选）
     providerModels: null,
-    // 数据集档案：text / text-image / nsfw-image / custom
+    // 数据集档案：text / text-image / unsafebench / nsfw-image / custom
     datasets: [],
     datasetId: null,
     // 当前展示结果所属的数据集（历史结果可能不是当前选择的数据集）
@@ -116,6 +117,7 @@
   }
 
   function catLabel(code) {
+    if (code === 'unsafe') return '不安全（二分类）';
     const item = (state.categories || []).find((c) => c.code === code);
     return item ? item.label : code;
   }
@@ -360,8 +362,14 @@
   function updateDatasetWarn(meta) {
     const warn = $('datasetWarn');
     if (!warn) return;
-    if (meta && Array.isArray(meta.providers) && meta.providers.length) {
-      warn.textContent = `数据集「${meta.name}」为图像评测集，当前仅允许 ${meta.providers.join(' / ')}（clef-omni）；选择其他 provider 会被后端拒绝。`;
+    const providerNote = meta && Array.isArray(meta.providers) && meta.providers.length
+      ? `当前仅允许 ${meta.providers.join(' / ')}（clef-omni）。`
+      : '';
+    if (meta && meta.labelMode === 'binary') {
+      warn.textContent = `数据集「${meta.name}」为 safe/unsafe 二分类评测集：请求体只包含 safe、unsafe 两个选项，不发送细分类别。${providerNote}`;
+      warn.hidden = false;
+    } else if (providerNote) {
+      warn.textContent = `数据集「${meta.name}」为图像评测集，${providerNote}选择其他 provider 会被后端拒绝。`;
       warn.hidden = false;
     } else {
       warn.hidden = true;
@@ -517,6 +525,7 @@
       ['run', result.runId],
       ['数据集', result.config?.datasetName || result.config?.dataset
         || ((Number(result.config?.imageCount) || 0) > 0 ? 'text-image（旧结果）' : '—')],
+      ['判定', result.config?.labelMode === 'binary' ? 'safe / unsafe 二分类' : '细分类别'],
       ['模型', `${result.provider} · ${result.model}`],
       ['并发', String(result.config?.concurrency ?? '—')],
       ['样本', String(result.config?.limit ?? '—')],

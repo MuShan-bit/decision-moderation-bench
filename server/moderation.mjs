@@ -54,6 +54,16 @@ export const TAXONOMY = Object.freeze([
 ]);
 
 export const TAXONOMY_CODES = Object.freeze(TAXONOMY.map((t) => t.code));
+
+// 二分类数据集（如 UnsafeBench）只有 safe / unsafe 两个选项；
+// unsafe 不是 taxonomy 里的细分类别，仅用于 binary 模式下的记录/指标展示。
+export const BINARY_UNSAFE_CODE = 'unsafe';
+export const BINARY_LABELS = Object.freeze({ safe: '安全', unsafe: '不安全' });
+export const LABEL_MODES = Object.freeze(['taxonomy', 'binary']);
+
+export function isBinaryLabelMode(mode) {
+  return mode === 'binary';
+}
 /** 违规类别（不含 safe），指标计算用 */
 export const VIOLATION_CODES = Object.freeze(
   TAXONOMY.filter((t) => t.violation).map((t) => t.code),

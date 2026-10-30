@@ -30,6 +30,7 @@ export const DATASET_PROFILES = Object.freeze([
     committed: true,
     localOnly: false,
     description: '825 条中文文本审核样本（8 类），纯文本基线',
+    labelMode: 'taxonomy',
   }),
   Object.freeze({
     id: 'text-image',
@@ -42,6 +43,20 @@ export const DATASET_PROFILES = Object.freeze([
     committed: true,
     localOnly: false,
     description: '120 条聊天/帖子截图（8 类 × 15），测图内文字审核',
+    labelMode: 'taxonomy',
+  }),
+  Object.freeze({
+    id: 'unsafebench',
+    name: 'UnsafeBench 图像安全评测集',
+    kind: 'unsafebench',
+    modality: 'image',
+    relPath: 'data/real-images/unsafebench/samples.jsonl',
+    imagesRelPath: 'data/real-images/unsafebench',
+    providers: Object.freeze(['cloudflare']),
+    committed: false,
+    localOnly: true,
+    labelMode: 'binary',
+    description: 'UnsafeBench 真实/AI 生成图像，safe/unsafe 二分类（本地导入）',
   }),
   Object.freeze({
     id: 'nsfw-image',
@@ -54,6 +69,7 @@ export const DATASET_PROFILES = Object.freeze([
     committed: false,
     localOnly: true,
     description: '本地导入的真实 NSFW 等实拍图像，图片不入库',
+    labelMode: 'taxonomy',
   }),
 ]);
 
@@ -93,6 +109,8 @@ export function publicProfile(profile, extra = {}) {
     committed: profile.committed === true,
     localOnly: profile.localOnly === true,
     providers: profile.providers ? [...profile.providers] : null,
+    labelMode: profile.labelMode === 'binary' ? 'binary' : 'taxonomy',
+    labels: profile.labelMode === 'binary' ? ['safe', 'unsafe'] : null,
     ...extra,
   };
 }

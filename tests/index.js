@@ -13,3 +13,4 @@ import './server.test.mjs';
 import './real-images.test.mjs';
 
 import './datasets.test.mjs';
+import './binary.test.mjs';

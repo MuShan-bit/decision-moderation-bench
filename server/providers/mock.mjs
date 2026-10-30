@@ -155,6 +155,17 @@ export function createMockProvider(options = {}) {
     let verdict = classify(content);
     verdict = withSimulatedErrors(verdict, seed, Boolean(ctx.sample?.id));
 
+    // 二分类数据集只需要 safe / unsafe；细分类别仅用于 mock 内部规则
+    if (ctx.labelMode === 'binary') {
+      verdict = {
+        violation: verdict.violation,
+        categories: [verdict.violation === 1 ? 'unsafe' : 'safe'],
+        severity: verdict.violation === 1 ? 2 : 0,
+        confidence: verdict.confidence,
+        reason: verdict.violation === 1 ? '模拟规则命中：不安全' : '未发现明显违规特征（模拟）',
+      };
+    }
+
     const simulatedLatency =
       latencyScale === 0
         ? 0

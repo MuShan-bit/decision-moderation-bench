@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getConfig } from './lib/env.mjs';
 import { abortError } from './lib/limiter.mjs';
-import { VIOLATION_CODES, isCorrect, isCategoryHit } from './moderation.mjs';
+import { BINARY_UNSAFE_CODE, VIOLATION_CODES, isCorrect, isCategoryHit } from './moderation.mjs';
 
 export const DEFAULT_CONCURRENCY = 4;
 export const MAX_CONCURRENCY = 16;
@@ -80,8 +80,10 @@ export function computeMetrics(records, meta = {}) {
 
   const latencies = [];
   const tokenTotals = { prompt: 0, completion: 0, total: 0, count: 0 };
+  const binaryMode = meta.labelMode === 'binary';
+  const categoryCodes = binaryMode ? [BINARY_UNSAFE_CODE] : VIOLATION_CODES;
   const categoryStats = new Map(
-    VIOLATION_CODES.map((code) => [
+    categoryCodes.map((code) => [
       code,
       { tp: 0, fp: 0, fn: 0, support: 0, predicted: 0 },
     ]),
@@ -200,7 +202,7 @@ export function computeMetrics(records, meta = {}) {
   let microFp = 0;
   let microFn = 0;
 
-  for (const code of VIOLATION_CODES) {
+  for (const code of categoryCodes) {
     const stat = categoryStats.get(code);
     const rates = prf(stat.tp, stat.fp, stat.fn);
     perCategory[code] = {
@@ -461,6 +463,7 @@ export function listResults(resultsDir = getConfig().resultsDir, { limit = 100 }
       datasetId: result.config?.dataset ?? null,
       datasetName: result.config?.datasetName ?? null,
       datasetKind: result.config?.datasetKind ?? null,
+      labelMode: result.config?.labelMode ?? null,
       modality: result.config?.modality ?? null,
       imageCount: result.config?.imageCount ?? null,
       limit: result.config?.limit ?? null,
@@ -615,6 +618,7 @@ export async function runBenchmark(options = {}) {
 
   const startedAt = new Date().toISOString();
   const records = new Array(total);
+  const labelMode = options.datasetMeta?.labelMode === 'binary' ? 'binary' : 'taxonomy';
   const imageCache = new Map();
   let done = 0;
   let cursor = 0;
@@ -631,7 +635,7 @@ export async function runBenchmark(options = {}) {
       let images;
       try {
         images = sample.image ? [loadImagePayload(imagesDir, sample.image, imageCache)] : undefined;
-        response = await provider.judge(sample.text, { sample, signal, images });
+        response = await provider.judge(sample.text, { sample, signal, images, labelMode });
       } catch (error) {
         if (error?.name === 'AbortError' || signal?.aborted) throw abortError(signal?.reason);
         const imageFailed = Boolean(sample.image && !images);
@@ -667,6 +671,7 @@ export async function runBenchmark(options = {}) {
     finishedAt,
     provider: provider.name,
     model: provider.model,
+    labelMode,
   });
 
   const result = {
@@ -685,6 +690,8 @@ export async function runBenchmark(options = {}) {
       datasetKind: options.datasetMeta?.kind ?? null,
       modality: imageCount > 0 ? 'image' : 'text',
       imageCount,
+      labelMode,
+      labels: labelMode === 'binary' ? ['safe', 'unsafe'] : null,
     },
     datasetFallback: options.datasetFallback === true,
     records,

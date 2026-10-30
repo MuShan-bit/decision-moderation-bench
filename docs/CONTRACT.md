@@ -74,17 +74,19 @@ Web 控制台 + 真实数据集 + 速度/准确率跑分。
 
 ### 3.2 数据集档案（`server/dataset-profiles.mjs`）
 
-数据集不再由单一 `DATASET_PATH` 隐式决定，而是三套独立档案；选择档案即确定 modality、图片目录与允许的 provider：
+数据集不再由单一 `DATASET_PATH` 隐式决定，而是四套独立档案；选择档案即确定 modality、标签模式（taxonomy / binary）、图片目录与允许的 provider：
 
 | id | name | kind | modality | 清单路径 | 图片目录 | providers | 入库 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `text` | 文本评测集 | text | text | `data/eval/samples.jsonl` | — | null（全部） | ✅ |
 | `text-image` | 文本图像评测集 | text-image | image | `data/images/samples.jsonl` | `data/images/` | `["cloudflare"]` | ✅ |
+| `unsafebench` | UnsafeBench 二分类图像评测集 | unsafebench | image（binary） | `data/real-images/unsafebench/samples.jsonl` | `data/real-images/unsafebench/` | `["cloudflare"]` | ❌（本地导入） |
 | `nsfw-image` | NSFW 实拍图像评测集 | nsfw-image | image | `data/real-images/samples.jsonl` | `data/real-images/` | `["cloudflare"]` | ❌（本地导入） |
 
 - 服务启动时：`DATASET` 选择档案（默认 `text`）；`DATASET_PATH` 显式指向自定义清单（优先级更高），若路径正好等于内置档案则映射回该 id，否则 id 为 `custom`；`IMAGES_DIR` 可覆盖图片目录。
 - 图像档案（`modality=image`）在创建跑分任务前只允许 `cloudflare` + `clef-omni` 模型；其他 provider/模型返回 `400 IMAGE_UNSUPPORTED`。文本/自定义文本档案不限制 provider。
 - 自定义图像清单（样本含 `image`）同样按 `image` 处理并限制 provider；`custom` 档案的元数据由样本推断。
+- `unsafebench` 的 `labelMode=binary`：样本 `gold.categories` 只有 `safe` / `unsafe`，创建任务时只发送一个 `safety` choice；`/api/config.datasets` 返回 `labelMode` 与 `labels`；生成脚本为 `scripts/prepare_unsafebench.py`。
 - `nsfw-image` 仅在本地导入图片与 `samples.jsonl` 后可用（`node scripts/import_real_images.mjs`），未就绪时档案 `available=false`，选择它会返回 `400 DATASET_UNAVAILABLE` 并附带导入命令提示。
 
 同时输出 `data/eval/stats.json`：
@@ -125,13 +127,13 @@ Web 控制台 + 真实数据集 + 速度/准确率跑分。
 
 - `GET /api/health` → `{"ok":true,"provider":"dashscope","model":"decision-model-preview","dataset":{"total":825},"apiKeyConfigured":true,"workspaceConfigured":true,"bamboonodeKeyConfigured":false,"jevKeyConfigured":false,"cloudflareKeyConfigured":false,"cloudflareAccountConfigured":false,"hasResults":true}`
 - `GET /api/config` → `{"providers":["dashscope","bamboonode","jev","cloudflare","mock"],"models":["decision-model-preview"],"providerModels":{"dashscope":["decision-model-preview"],"bamboonode":["startlux-decision-27b-autothink"],"jev":["jev-preview","jev-latest"],"cloudflare":["clef-omni"],"mock":["mock-rule-v1"]},"defaultProvider":"dashscope","defaultModel":"decision-model-preview","taxonomy":[{"code":"safe","label":"正常"},...],"concurrencyOptions":[1,2,4,8,16],"latestResultId":"..."}`（前端用 `providerModels` 做 Provider→Model 级联筛选）
-- `GET /api/dataset?dataset=text|text-image|nsfw-image|custom&offset=0&limit=50&filter=all|violation|safe|error` → `{"total":120,"items":[{sample fields...}],"dataset":{...档案元数据...},"datasetTotal":120,"fallback":false,"error":null,"invalidLines":0}`（`dataset` 省略时使用默认档案；sensitive 字段供前端打码；图像样本额外带 `image`；未知档案 → `400 UNKNOWN_DATASET`，不可用档案 → `400 DATASET_UNAVAILABLE`）
+- `GET /api/dataset?dataset=text|text-image|unsafebench|nsfw-image|custom&offset=0&limit=50&filter=all|violation|safe|error` → `{"total":120,"items":[{sample fields...}],"dataset":{...档案元数据...},"datasetTotal":120,"fallback":false,"error":null,"invalidLines":0}`（`dataset` 省略时使用默认档案；sensitive 字段供前端打码；图像样本额外带 `image`；未知档案 → `400 UNKNOWN_DATASET`，不可用档案 → `400 DATASET_UNAVAILABLE`）
 - `GET /api/images/:basename?dataset=` → 图像样本文件（`Content-Type: image/png|jpeg|webp`，`Cache-Control: public, max-age=3600`）；从所选档案的图片目录读取，仅允许白名单扩展名 + basename，目录穿越/非法名返回 `404 IMAGE_NOT_FOUND`；跨档案取图不会串目录
 - `GET /api/results?page=1&pageSize=6` → `{"total":12,"page":1,"pageSize":6,"totalPages":2,"latestResultId":"bench-...","runs":[{"runId":"bench-...","provider":"bamboonode","model":"startlux-decision-27b-autothink","simulated":false,"startedAt":"...","finishedAt":"...","sampleCount":825,"datasetTotal":825,"limit":825,"concurrency":4,"accuracy":0.8376,"precision":0.8654,"recall":0.8819,"f1":0.8736,"macroF1":0.754,"p50":1533,"p95":7977.6,"throughputRps":1.58,"tokensTotal":699963,"errors":0,"perCategory":{...}}]}`：历史跑分分页摘要（按结束时间倒序，不含 records 正文），供「跑分记录 / 模型对比」使用；`page` 默认 1，`pageSize` 默认 10、上限 50，越界 page 自动夹到最后一页
 - `GET /api/results/latest` → 最新 bench result（结构见第 6 节）或 `null`
 - `GET /api/results/:runId` → 结果
 - `DELETE /api/results/:runId` → `{"ok":true,"runId":"...","latestResultId":"..."}`：删除一条历史跑分；若删除的是 latest 指向记录，自动回退到剩余最新一条（没有则删除 `latest.json`），不存在返回 404
-- `POST /api/benchmark` body `{"dataset":"text","limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`dataset` 省略时用默认档案，图像档案（`text-image` / `nsfw-image` / 含图自定义集）仅允许 `cloudflare`，否则 `400 IMAGE_UNSUPPORTED`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；`provider=cloudflare` 时取 `clef-omni`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
+- `POST /api/benchmark` body `{"dataset":"text","limit":200,"concurrency":4,"provider":"dashscope","model":"decision-model-preview"}` → `202 {"runId":"bench-20261023-211500"}`；`dataset` 省略时用默认档案，图像档案（`text-image` / `unsafebench` / `nsfw-image` / 含图自定义集）仅允许 `cloudflare`，否则 `400 IMAGE_UNSUPPORTED`；`provider=bamboonode` 时 `model` 取 `startlux-decision-27b-autothink`；`provider=jev` 时取 `jev-preview` / `jev-latest`；`provider=cloudflare` 时取 `clef-omni`；跨 provider 模型 → `400 MODEL_NOT_ALLOWED`
 - `GET /api/benchmark/:runId` → `{"runId":"...","status":"queued|running|done|error","done":123,"total":820,"resultId":"bench-...","error":null,"startedAt":"...","elapsedMs":12345}`
 - `POST /api/moderate` body `{"text":"...","provider":"dashscope"}`（或 `bamboonode` + 对应 `model`）→ `{"verdict":{...},"latencyMs":830,"provider":"dashscope","model":"decision-model-preview","parseError":false,"raw":"..."}`
 - `GET /api/results/:runId/export.csv`（可选，前端也可本地生成）
@@ -145,7 +147,8 @@ Cloudflare 与其余真实 provider 共用 System One typed-decision 请求体 `
 - endpoint：`POST https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/cloudflare/clef-omni`（`CLOUDFLARE_BASE_URL` 可覆盖前缀，默认 `https://api.cloudflare.com/client/v4`）；
 - 鉴权：`Authorization: Bearer $CLOUDFLARE_API_TOKEN`（API Token 需 Workers AI - Read/Edit 权限；`CLOUDFLARE_AUTH_TOKEN` 为兼容别名）；
 - 响应：Cloudflare 标准信封 `{"result":{"model","answers","usage"},"success":true,"errors":[],"messages":[]}`。provider 先取出 `result`，再复用与 dashscope 相同的 `answers` 解析与阈值逻辑；`usage.input_tokens` / `usage.output_tokens` 分别计入 prompt / completion（clef 决策模型不生成文本，`output_tokens` 通常为 0）。
-- 图片输入：请求体额外携带 `images:[{"content_type":"image/png","base64":"..."}]`（单图 ≤ 4MiB，最多 4 张），同时把 category/severity/attack/harmful 的 instructions 切换为“图片/截图”措辞；`images` 为空时与纯文本请求完全一致。`cloudflare` provider 声明 `supportsImages=true`，其余 provider 为 false（含图像样本的数据集会以 `IMAGE_UNSUPPORTED` 拒绝跑分）。
+- 图片输入：请求体额外携带 `images:[{"content_type":"image/png","base64":"..."}]`（单图 ≤ 4MiB，最多 4 张），同时把 category/severity/attack/harmful 的 instructions 切换为“图片/截图”措辞；`images` 为空时与纯文本请求完全一致。
+- 二分类（`labelMode=binary`）：请求体只含 `questions.safety`（`choice`，criteria 仅 `safe` / `unsafe`），不发送 category/severity/attack/harmful；解析读取 `answers.safety.choice` 或 `probabilities` 的 argmax，映射为 `violation=1/categories=["unsafe"]` 或 `violation=0/categories=["safe"]`。`cloudflare` provider 声明 `supportsImages=true`，其余 provider 为 false（含图像样本的数据集会以 `IMAGE_UNSUPPORTED` 拒绝跑分）。
 
 配置：`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` 必填，`CLOUDFLARE_MODELS` 默认 `clef-omni`；缺任一项时 `/api/health.cloudflareKeyConfigured` / `cloudflareAccountConfigured` 为 false，显式选择 `cloudflare` 会返回 `400 MISSING_API_KEY` / `400 MISSING_ACCOUNT_ID`。文档：<https://developers.cloudflare.com/workers-ai/models/clef-omni/>。
 
@@ -172,7 +175,7 @@ user：`待审核文本：\n<<<\n{text}\n>>>`
 
 ```json
 {"runId":"bench-...","startedAt":"ISO","finishedAt":"ISO","provider":"dashscope","model":"decision-model-preview",
- "config":{"concurrency":4,"limit":820,"datasetTotal":820,"dataset":"text","datasetName":"文本评测集","datasetKind":"text","modality":"text|image","imageCount":0},
+ "config":{"concurrency":4,"limit":820,"datasetTotal":820,"dataset":"text","datasetName":"文本评测集","datasetKind":"text","modality":"text|image","imageCount":0,"labelMode":"taxonomy|binary","labels":null},
  "records":[{"id":"cold-0001","text":"...","source":"cold","sensitive":false,"image":"img-cold-0001.png",
    "gold":{"violation":true,"categories":["hate"]},
    "prediction":{"violation":1,"categories":["hate"],"severity":2,"confidence":0.9,"reason":"..."},

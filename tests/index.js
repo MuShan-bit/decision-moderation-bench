@@ -7,4 +7,5 @@ import './dataset.test.mjs';
 import './mock.test.mjs';
 import './providers.test.mjs';
 import './cloudflare.test.mjs';
+import './images.test.mjs';
 import './server.test.mjs';

@@ -10,6 +10,28 @@ export const DEFAULT_CONCURRENCY = 4;
 export const MAX_CONCURRENCY = 16;
 const RUN_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 
+/** 图片扩展名 -> MIME；clef-omni 支持 png/jpeg/webp */
+const IMAGE_MIME = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+});
+
+/** 读取图像样本为 clef-omni images[] 所需的 {content_type, base64}（按文件名缓存） */
+function loadImagePayload(imagesDir, name, cache) {
+  if (cache.has(name)) return cache.get(name);
+  const safeName = path.basename(String(name));
+  const ext = path.extname(safeName).toLowerCase();
+  const content_type = IMAGE_MIME[ext];
+  if (!content_type) throw new Error(`不支持的图片扩展名：${safeName}`);
+  const filePath = path.join(imagesDir, safeName);
+  const base64 = fs.readFileSync(filePath).toString('base64');
+  const payload = { content_type, base64 };
+  cache.set(name, payload);
+  return payload;
+}
+
 function round(value, digits = 4) {
   if (!Number.isFinite(value)) return 0;
   const factor = 10 ** digits;
@@ -523,6 +545,7 @@ function buildRecord(sample, response) {
     raw: typeof response?.raw === 'string' ? response.raw : '',
   };
   if (sample.source_detail !== undefined) record.source_detail = sample.source_detail;
+  if (sample.image) record.image = sample.image;
   return record;
 }
 
@@ -535,9 +558,9 @@ function buildRecord(sample, response) {
  *   concurrency?: number,
  *   runId?: string,
  *   resultsDir?: string,
+ *   imagesDir?: string,
  *   onProgress?: (progress: {done: number, total: number, record: object}) => void,
  *   signal?: AbortSignal,
- *   simated?: boolean,
  *   datasetFallback?: boolean,
  * }} options
  */
@@ -561,6 +584,7 @@ export async function runBenchmark(options = {}) {
 
   const cfg = getConfig();
   const resultsDir = options.resultsDir || cfg.resultsDir;
+  const imagesDir = options.imagesDir || cfg.imagesDir;
   const datasetTotal = samples.length;
   const requestedLimit =
     limit === undefined || limit === null ? datasetTotal : Math.floor(Number(limit));
@@ -569,6 +593,13 @@ export async function runBenchmark(options = {}) {
   }
   const total = Math.min(requestedLimit, datasetTotal);
   const selected = samples.slice(0, total);
+  const imageCount = selected.filter((sample) => sample && sample.image).length;
+  // 图像样本需要 provider 支持多模态输入；文本 provider 混跑会产生误导性结果，直接拒绝
+  if (imageCount > 0 && provider.supportsImages !== true) {
+    throw new Error(
+      `选中样本含 ${imageCount} 条图像样本，但 provider ${provider.name || ''} 不支持图片输入；请使用 cloudflare（clef-omni）`,
+    );
+  }
   const poolSize = Math.min(
     MAX_CONCURRENCY,
     Math.max(1, Math.floor(Number(concurrency) || DEFAULT_CONCURRENCY)),
@@ -579,6 +610,7 @@ export async function runBenchmark(options = {}) {
 
   const startedAt = new Date().toISOString();
   const records = new Array(total);
+  const imageCache = new Map();
   let done = 0;
   let cursor = 0;
 
@@ -591,14 +623,19 @@ export async function runBenchmark(options = {}) {
 
       const sample = selected[index];
       let response;
+      let images;
       try {
-        response = await provider.judge(sample.text, { sample, signal });
+        images = sample.image ? [loadImagePayload(imagesDir, sample.image, imageCache)] : undefined;
+        response = await provider.judge(sample.text, { sample, signal, images });
       } catch (error) {
         if (error?.name === 'AbortError' || signal?.aborted) throw abortError(signal?.reason);
+        const imageFailed = Boolean(sample.image && !images);
         response = {
           verdict: null,
           parseError: false,
-          error: `调用异常：${error?.message || error}`,
+          error: imageFailed
+            ? `图片读取失败：${error?.message || error}`
+            : `调用异常：${error?.message || error}`,
           raw: '',
           latencyMs: 0,
           tokens: null,
@@ -638,6 +675,8 @@ export async function runBenchmark(options = {}) {
       concurrency: poolSize,
       limit: total,
       datasetTotal,
+      modality: imageCount > 0 ? 'image' : 'text',
+      imageCount,
     },
     datasetFallback: options.datasetFallback === true,
     records,
@@ -674,6 +713,7 @@ export function resultToCsv(result) {
     'error',
     'reason',
     'text',
+    'image',
   ];
   const lines = [header.join(',')];
   for (const record of result?.records || []) {
@@ -695,6 +735,7 @@ export function resultToCsv(result) {
       record.error,
       record.prediction?.reason,
       record.text,
+      record.image,
     ];
     lines.push(row.map(csvCell).join(','));
   }

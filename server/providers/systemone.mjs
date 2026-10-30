@@ -25,22 +25,54 @@ const SEVERITY_CRITERIA = Object.freeze([
   '严重：暴力威胁、严重违法教唆、高危或大规模传播内容',
 ]);
 
-const CATEGORY_INSTRUCTIONS = [
-  '对这条待审核文本做内容安全分类，只选一个最贴切的类别。判定原则：',
-  '1) 直接或间接的辱骂、嘲讽、阴阳怪气、贬低人格/外貌/智力的评论属于 insult；',
-  '2) 对性别、地域、种族、宗教、职业等群体的贬低、仇恨、煽动对立属于 hate；',
-  '3) 请求、询问、教唆如何实施违法行为或购买违禁品（即使以提问形式）属于 illegal；',
-  '4) 暴力威胁、血腥伤害、自残自杀内容属于 violence；',
-  '5) 含联系方式、引流、刷单、推广话术，即使有错别字/谐音/乱码变体也属于 spam；',
-  '6) 新闻转述、举报、学术讨论、引述他人观点等仅“提及”违规内容不判违规；',
-  '7) 完全正常、无攻击或违规风险的内容选 safe。',
-].join('');
+/** 根据模态（纯文本 / 图片）生成 instructions；图片模式下要求先识别图中文字再判定 */
+function buildCategoryInstructions(imageMode) {
+  return [
+    imageMode
+      ? '对这张待审核图片做内容安全分类，先识别图片中的文字/画面内容，只选一个最贴切的类别。判定原则：'
+      : '对这条待审核文本做内容安全分类，只选一个最贴切的类别。判定原则：',
+    '1) 直接或间接的辱骂、嘲讽、阴阳怪气、贬低人格/外貌/智力的评论属于 insult；',
+    '2) 对性别、地域、种族、宗教、职业等群体的贬低、仇恨、煽动对立属于 hate；',
+    '3) 请求、询问、教唆如何实施违法行为或购买违禁品（即使以提问形式）属于 illegal；',
+    '4) 暴力威胁、血腥伤害、自残自杀内容属于 violence；',
+    '5) 含联系方式、引流、刷单、推广话术，即使有错别字/谐音/乱码变体也属于 spam；',
+    '6) 新闻转述、举报、学术讨论、引述他人观点等仅“提及”违规内容不判违规；',
+    '7) 完全正常、无攻击或违规风险的内容选 safe。',
+  ].join('');
+}
 
-const SEVERITY_INSTRUCTIONS = '该文本的违规严重程度如何？（正常内容选 0 级）';
-const ATTACK_INSTRUCTIONS =
-  '这段文本是否在攻击、贬低、嘲讽或冒犯某个人或群体（包括阴阳怪气、暗讽、人身攻击）？';
-const HARMFUL_INSTRUCTIONS =
-  '这段文本是否在请求、询问或教唆实施违法/危险行为，或涉及违禁品交易？';
+function buildSeverityInstructions(imageMode) {
+  return imageMode
+    ? '这张图片的违规严重程度如何？（正常内容选 0 级）'
+    : '该文本的违规严重程度如何？（正常内容选 0 级）';
+}
+
+function buildAttackInstructions(imageMode) {
+  return imageMode
+    ? '这张图片中的内容是否在攻击、贬低、嘲讽或冒犯某个人或群体（包括阴阳怪气、暗讽、人身攻击）？'
+    : '这段文本是否在攻击、贬低、嘲讽或冒犯某个人或群体（包括阴阳怪气、暗讽、人身攻击）？';
+}
+
+function buildHarmfulInstructions(imageMode) {
+  return imageMode
+    ? '这张图片是否在请求、询问或教唆实施违法/危险行为，或涉及违禁品交易？'
+    : '这段文本是否在请求、询问或教唆实施违法/危险行为，或涉及违禁品交易？';
+}
+
+/** 图片输入归一化：仅保留 {content_type, base64} 字符串，空值忽略 */
+export function normalizeImages(images) {
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter((image) => image && typeof image === 'object')
+    .map((image) => ({
+      content_type:
+        typeof image.content_type === 'string' && image.content_type.trim()
+          ? image.content_type.trim()
+          : 'image/png',
+      base64: typeof image.base64 === 'string' ? image.base64.trim() : '',
+    }))
+    .filter((image) => image.base64.length > 0);
+}
 
 /** 后处理阈值：category 的违规类别概率 / attack / harmful 达到阈值即判为对应违规 */
 export const ENSEMBLE_THRESHOLDS = Object.freeze({
@@ -49,29 +81,37 @@ export const ENSEMBLE_THRESHOLDS = Object.freeze({
   harmful: 0.6,
 });
 
-/** 构造 System One 请求体（导出便于测试）；ensemble=false 时只问 category+severity（纯 argmax 模式） */
+/**
+ * 构造 System One 请求体（导出便于测试）。
+ * ensemble=false 时只问 category+severity（纯 argmax 模式）；
+ * options.images 非空时按 clef-omni 多模态协议附带图片，并把 instructions 切换为图片措辞。
+ */
 export function buildSystemOnePayload(text, options = {}) {
+  const images = normalizeImages(options.images);
+  const imageMode = images.length > 0;
   const questions = {
     category: {
       type: 'choice',
-      instructions: CATEGORY_INSTRUCTIONS,
+      instructions: buildCategoryInstructions(imageMode),
       criteria: { ...CATEGORY_CRITERIA },
     },
     severity: {
       type: 'score',
-      instructions: SEVERITY_INSTRUCTIONS,
+      instructions: buildSeverityInstructions(imageMode),
       criteria: [...SEVERITY_CRITERIA],
     },
   };
   if (options.ensemble !== false) {
-    questions.attack = { type: 'noul', instructions: ATTACK_INSTRUCTIONS };
-    questions.harmful = { type: 'noul', instructions: HARMFUL_INSTRUCTIONS };
+    questions.attack = { type: 'noul', instructions: buildAttackInstructions(imageMode) };
+    questions.harmful = { type: 'noul', instructions: buildHarmfulInstructions(imageMode) };
   }
-  return {
+  const payload = {
     model: String(options.model || DEFAULT_MODEL),
     state: String(text ?? ''),
     questions,
   };
+  if (imageMode) payload.images = images;
+  return payload;
 }
 
 /** 由 workspace/region 拼 endpoint */
@@ -226,6 +266,7 @@ function identityResponse(data) {
  *   timeoutMs?: number,
  *   maxRetries?: number,
  *   unwrap?: (data: any) => any,
+ *   supportsImages?: boolean,
  *   fetchImpl?: typeof fetch,
  * }} options
  */
@@ -238,6 +279,7 @@ export function createSystemOneProvider(options = {}) {
   const timeoutMs = Math.max(1000, Math.floor(Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS));
   const maxRetries = Math.max(0, Math.floor(Number(options.maxRetries) ?? 3));
   const ensemble = options.ensemble !== false;
+  const supportsImages = options.supportsImages === true;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   // 网关响应信封不同（如 Cloudflare REST {result,...}），由 provider 传入适配函数归一化
   const unwrap = typeof options.unwrap === 'function' ? options.unwrap : identityResponse;
@@ -245,7 +287,7 @@ export function createSystemOneProvider(options = {}) {
   const limiter = createLimiter(Math.max(32, Math.floor(Number(options.concurrency) || 32)));
   let notFoundHint = false;
 
-  async function requestOnce(text, { signal } = {}) {
+  async function requestOnce(text, { signal, images } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort(new Error(`请求超时（${timeoutMs}ms）`));
@@ -266,7 +308,7 @@ export function createSystemOneProvider(options = {}) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(buildSystemOnePayload(text, { ensemble, model })),
+        body: JSON.stringify(buildSystemOnePayload(text, { ensemble, model, images })),
         signal: combinedSignal,
       });
       const bodyText = await response.text();
@@ -379,7 +421,9 @@ export function createSystemOneProvider(options = {}) {
     for (;;) {
       if (ctx.signal?.aborted) throw abortError(ctx.signal.reason);
       attempt += 1;
-      const result = await limiter.run(() => requestOnce(String(text ?? ''), { signal: ctx.signal }));
+      const result = await limiter.run(() =>
+        requestOnce(String(text ?? ''), { signal: ctx.signal, images: ctx.images }),
+      );
 
       if (result.ok) {
         return {
@@ -426,7 +470,7 @@ export function createSystemOneProvider(options = {}) {
     }
   }
 
-  return { name, model, simulated: false, ensemble, judge, endpoint };
+  return { name, model, simulated: false, ensemble, supportsImages, judge, endpoint };
 }
 
 function nowMs() {

@@ -740,9 +740,14 @@
     const cls = isError ? 'error' : record.correct ? 'ok' : 'wrong';
     const card = el('article', `sample ${cls}`);
 
+    // 图像样本：image 为纯文件名，经 /api/images/<basename> 同源提供；text 只是中性提示语。
+    const imageName = typeof record.image === 'string' && record.image.trim() ? record.image.trim() : '';
+    const isImage = imageName !== '';
+
     const head = el('div', 'sample-head');
     head.appendChild(el('span', 'sample-id', record.id));
     head.appendChild(el('span', 'tag src', record.source || '—'));
+    if (isImage) head.appendChild(el('span', 'tag image', '图像'));
     if (record.sensitive) head.appendChild(el('span', 'tag sensitive', '敏感'));
     if (isError) head.appendChild(el('span', 'tag warn', '调用错误'));
     else if (record.correct) head.appendChild(el('span', 'tag good', '判对'));
@@ -752,25 +757,55 @@
     card.appendChild(head);
 
     const masked = record.sensitive && !state.revealAll && !state.revealed.has(record.id);
-    const textNode = el('div', `sample-text${masked ? ' is-masked' : ''}`, record.text);
+
+    // 图像样本：真正内容在图片里，打码对象是图片；中性提示语保持可读。
+    let imageNode = null;
+    if (isImage) {
+      imageNode = el('img', `sample-image${masked ? ' is-masked' : ''}`);
+      imageNode.src = `/api/images/${encodeURIComponent(imageName)}`;
+      imageNode.alt = '样本图片';
+      imageNode.setAttribute('loading', 'lazy');
+      imageNode.decoding = 'async';
+      if (masked) {
+        imageNode.title = '敏感图片已打码，点击显示';
+        imageNode.addEventListener('click', () => {
+          state.revealed.add(record.id);
+          renderSamples();
+        });
+      }
+      // 加载失败时退化为轻量占位（不弹错、不打断渲染）。
+      imageNode.addEventListener('error', () => {
+        imageNode.classList.add('is-error');
+        imageNode.alt = '样本图片加载失败';
+        imageNode.removeAttribute('title');
+      });
+      card.appendChild(imageNode);
+    }
+
+    const textNode = el(
+      'div',
+      `sample-text${!isImage && masked ? ' is-masked' : ''}`,
+      record.text,
+    );
+    if (!isImage && masked) {
+      textNode.addEventListener('click', () => {
+        state.revealed.add(record.id);
+        renderSamples();
+      });
+    }
     card.appendChild(textNode);
 
     if (record.sensitive) {
       const note = el('div', 'mask-note');
-      note.appendChild(el('span', '', masked ? '敏感文本已打码' : '敏感文本已显示'));
-      const btn = el('button', 'btn tiny ghost', masked ? '显示原文' : '隐藏原文');
+      const kind = isImage ? '图片' : '文本';
+      note.appendChild(el('span', '', masked ? `敏感${kind}已打码` : `敏感${kind}已显示`));
+      const btn = el('button', 'btn tiny ghost', masked ? `显示${isImage ? '图片' : '原文'}` : `隐藏${isImage ? '图片' : '原文'}`);
       btn.type = 'button';
       btn.addEventListener('click', () => {
         if (state.revealed.has(record.id)) state.revealed.delete(record.id);
         else state.revealed.add(record.id);
         renderSamples();
       });
-      if (masked) {
-        textNode.addEventListener('click', () => {
-          state.revealed.add(record.id);
-          renderSamples();
-        });
-      }
       note.appendChild(btn);
       card.appendChild(note);
     }

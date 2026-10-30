@@ -490,6 +490,16 @@ function handleStartBenchmark(req, res) {
     }
     const total = Math.min(requestedLimit, dataset.samples.length);
 
+    // 图像样本需要多模态 provider；当前仅 cloudflare clef-omni 支持 images
+    const imageCount = dataset.samples.slice(0, total).filter((sample) => sample.image).length;
+    if (imageCount > 0 && providerName !== 'cloudflare') {
+      throw new HttpError(
+        400,
+        `数据集含 ${imageCount} 条图像样本，provider ${providerName} 不支持图片输入；请改用 cloudflare（clef-omni）`,
+        'IMAGE_UNSUPPORTED',
+      );
+    }
+
     let concurrency = DEFAULT_CONCURRENCY;
     if (body.concurrency !== undefined && body.concurrency !== null && body.concurrency !== '') {
       const n = Number(body.concurrency);
@@ -522,7 +532,13 @@ function handleStartBenchmark(req, res) {
       provider: providerName,
       model,
       simulated: providerName === 'mock',
-      config: { concurrency, limit: total, datasetTotal: dataset.samples.length },
+      config: {
+        concurrency,
+        limit: total,
+        datasetTotal: dataset.samples.length,
+        modality: imageCount > 0 ? 'image' : 'text',
+        imageCount,
+      },
     };
     benchmarkJobs.set(jobRunId, state);
 
@@ -538,6 +554,7 @@ function handleStartBenchmark(req, res) {
           concurrency,
           runId: jobRunId,
           resultsDir: cfg.resultsDir,
+          imagesDir: cfg.imagesDir,
           datasetFallback: dataset.fallback === true,
           onProgress: ({ done }) => {
             state.done = done;
@@ -681,12 +698,48 @@ function handleModerate(req, res) {
   })();
 }
 
+const IMAGE_ROUTE_RE = /^[A-Za-z0-9._-]+\.(png|jpe?g|webp)$/i;
+
+/** GET /api/images/<basename>：图像样本文件（仅允许白名单扩展名 + basename，防目录穿越） */
+function handleImage(req, res, url) {
+  const rawName = safeDecode(url.pathname.slice('/api/images/'.length));
+  if (!IMAGE_ROUTE_RE.test(rawName)) {
+    sendJson(res, 404, { error: '图片不存在', code: 'IMAGE_NOT_FOUND' });
+    return;
+  }
+  const cfg = getConfig();
+  const filePath = path.join(cfg.imagesDir, rawName);
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    sendJson(res, 404, { error: '图片不存在', code: 'IMAGE_NOT_FOUND' });
+    return;
+  }
+  if (!stat.isFile()) {
+    sendJson(res, 404, { error: '图片不存在', code: 'IMAGE_NOT_FOUND' });
+    return;
+  }
+  const ext = path.extname(rawName).toLowerCase();
+  const mime = MIME_TYPES[ext] || 'application/octet-stream';
+  const body = fs.readFileSync(filePath);
+  res.writeHead(200, {
+    'Content-Type': mime,
+    'Content-Length': body.length,
+    'Cache-Control': 'public, max-age=3600',
+  });
+  res.end(body);
+}
+
 async function handleApi(req, res, url) {
   const method = req.method || 'GET';
   const pathname = url.pathname;
 
   if (method === 'GET' && pathname === '/api/health') return handleHealth(req, res);
   if (method === 'GET' && pathname === '/api/config') return handleConfig(req, res);
+  if (method === 'GET' && pathname.startsWith('/api/images/')) {
+    return handleImage(req, res, url);
+  }
   if (method === 'GET' && pathname === '/api/dataset') return handleDataset(req, res, url);
   if (method === 'GET' && pathname === '/api/results') {
     return handleResultsList(req, res, url);

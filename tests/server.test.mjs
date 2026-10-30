@@ -14,6 +14,12 @@ const DATASET_FILE = path.join(DATA_DIR, 'samples.jsonl');
 
 const FAKE_KEY = 'sk-test-secret-do-not-write';
 
+// 1x1 透明 PNG：用于 /api/images 路由与图像数据集测试
+const FIXTURE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 const FIXTURE_SAMPLES = [
   {
     id: 'cold-0001',
@@ -147,6 +153,8 @@ function prepareFixtures() {
     '<!doctype html><html><head><meta charset="utf-8"><title>测试首页</title></head><body><h1>DashScope 审核测试页</h1></body></html>',
   );
   fs.writeFileSync(path.join(PUBLIC_DIR, 'app.js'), 'console.log("ok");\n');
+  // /api/images 路由读取 cfg.imagesDir（默认 = DATASET_PATH 所在目录 = DATA_DIR）
+  fs.writeFileSync(path.join(DATA_DIR, 'img-fixture.png'), FIXTURE_PNG);
 }
 
 prepareFixtures();
@@ -658,4 +666,60 @@ test('DELETE /api/results/:runId：删除记录并回退 latest', async () => {
   assert.equal(emptyList.body.runs.length, 0);
   const health = await getJson('/api/health');
   assert.equal(health.body.hasResults, false);
+});
+
+test('GET /api/images/<basename>：返回图片并拒绝非法路径', async () => {
+  const res = await fetch(`${baseUrl}/api/images/img-fixture.png`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /image\/png/);
+  assert.match(res.headers.get('cache-control'), /max-age=3600/);
+  const body = Buffer.from(await res.arrayBuffer());
+  assert.deepEqual(body, FIXTURE_PNG);
+
+  // 不存在 / 非法扩展名 / 编码后的目录穿越都按 404 处理
+  for (const pathname of [
+    '/api/images/nope.png',
+    '/api/images/samples.jsonl',
+    '/api/images/%2e%2e%2fsamples.jsonl',
+  ]) {
+    const miss = await getJson(pathname);
+    assert.equal(miss.res.status, 404, pathname);
+    assert.equal(miss.body.code, 'IMAGE_NOT_FOUND');
+  }
+});
+
+test('图像数据集：/api/dataset 携带 image，非 cloudflare 跑分返回 IMAGE_UNSUPPORTED', async () => {
+  const imageDataset = path.join(DATA_DIR, 'image-samples.jsonl');
+  fs.writeFileSync(
+    imageDataset,
+    JSON.stringify({
+      id: 'img-cold-0001',
+      image: 'img-fixture.png',
+      text: '这是一张用户聊天截图，请审核图片中的内容。',
+      source: 'cold',
+      origin: 'human',
+      sensitive: false,
+      gold: { violation: true, categories: ['insult'] },
+    }),
+  );
+  const previousDatasetPath = process.env.DATASET_PATH;
+  process.env.DATASET_PATH = imageDataset;
+  try {
+    const dataset = await getJson('/api/dataset?limit=5');
+    assert.equal(dataset.res.status, 200);
+    assert.equal(dataset.body.total, 1);
+    assert.equal(dataset.body.items[0].image, 'img-fixture.png');
+
+    const res = await fetch(`${baseUrl}/api/benchmark`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'mock' }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.code, 'IMAGE_UNSUPPORTED');
+    assert.match(body.error, /cloudflare/);
+  } finally {
+    process.env.DATASET_PATH = previousDatasetPath;
+  }
 });

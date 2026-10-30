@@ -164,6 +164,10 @@ export function getConfig(env = process.env) {
   const datasetPath = env.DATASET_PATH
     ? path.resolve(ROOT, String(env.DATASET_PATH))
     : path.join(ROOT, 'data', 'eval', 'samples.jsonl');
+  // 图像样本默认与数据集清单同目录（image 字段只存 basename），可用 IMAGES_DIR 覆盖
+  const imagesDir = env.IMAGES_DIR
+    ? path.resolve(ROOT, String(env.IMAGES_DIR))
+    : path.dirname(datasetPath);
   const publicDir = env.PUBLIC_DIR
     ? path.resolve(ROOT, String(env.PUBLIC_DIR))
     : path.join(ROOT, 'public');
@@ -203,6 +207,7 @@ export function getConfig(env = process.env) {
     mockLatencyScale: Math.max(0, toFloat(env.MOCK_LATENCY_SCALE, 1)),
     resultsDir,
     datasetPath,
+    imagesDir,
     publicDir,
   };
 }

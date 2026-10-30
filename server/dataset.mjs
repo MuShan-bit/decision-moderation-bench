@@ -5,6 +5,18 @@ import fs from 'node:fs';
 import { getConfig } from './lib/env.mjs';
 import { TAXONOMY_CODES } from './moderation.mjs';
 
+/** 图片样本文件名白名单：只允许 basename（png/jpg/jpeg/webp），防止目录穿越 */
+const IMAGE_NAME_RE = /^[A-Za-z0-9._-]+\.(png|jpe?g|webp)$/i;
+const MAX_IMAGE_NAME_LENGTH = 128;
+
+function normalizeImageName(raw) {
+  if (typeof raw !== 'string') return null;
+  const name = raw.trim();
+  if (!name || name.length > MAX_IMAGE_NAME_LENGTH) return null;
+  if (!IMAGE_NAME_RE.test(name)) return null;
+  return name;
+}
+
 /**
  * 内置兜底样本：仅用于数据集尚未生成时的 demo/自测，
  * 通过 source="builtin" 与数据集的 cold/toxincn/... 明确区分。
@@ -113,6 +125,18 @@ export function normalizeSample(raw) {
   const goldIn = raw.gold && typeof raw.gold === 'object' ? raw.gold : null;
   if (!goldIn) return null;
 
+  // 可选图像样本：image 只接受同目录下的 basename（png/jpg/jpeg/webp），否则视为坏行；
+  // 空字符串/纯空白视为未提供 image（纯文本样本）。
+  let image = null;
+  if (raw.image !== undefined && raw.image !== null) {
+    if (typeof raw.image !== 'string') return null;
+    const trimmedImage = raw.image.trim();
+    if (trimmedImage !== '') {
+      image = normalizeImageName(trimmedImage);
+      if (!image) return null;
+    }
+  }
+
   let violation;
   if (goldIn.violation === true || goldIn.violation === 1 || goldIn.violation === 'true') {
     violation = true;
@@ -151,6 +175,8 @@ export function normalizeSample(raw) {
     gold: { violation, categories: [...new Set(categories)] },
   };
   if (typeof raw.source_detail === 'string') sample.source_detail = raw.source_detail;
+  if (image) sample.image = image;
+  else delete sample.image;
 
   return sample;
 }

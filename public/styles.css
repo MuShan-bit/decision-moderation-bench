@@ -616,6 +616,7 @@ table.data-table { width: 100%; border-collapse: collapse; min-width: 560px; }
   white-space: nowrap;
 }
 .tag.src { font-family: var(--mono); font-size: 10px; }
+.tag.image { color: #bae6fd; border-color: rgba(56, 189, 248, 0.42); background: rgba(56, 189, 248, 0.12); }
 .tag.sensitive { color: #fcd34d; border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.1); }
 .tag.good { color: #a7f3d0; border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.1); }
 .tag.bad { color: #fecaca; border-color: rgba(248, 113, 113, 0.42); background: rgba(248, 113, 113, 0.12); }
@@ -638,6 +639,36 @@ table.data-table { width: 100%; border-collapse: collapse; min-width: 560px; }
 }
 .sample-text.is-masked:hover { filter: blur(5px); opacity: 0.85; }
 .sample-text.is-masked::after { content: " 🔒"; filter: none; }
+
+/* 图像样本：内容在图片里，敏感时对图片打码，点击揭示 */
+.sample-image {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  margin: 10px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: #f1f5f9;
+  vertical-align: middle;
+  transition: filter 0.16s ease, opacity 0.16s ease;
+}
+.sample-image.is-masked {
+  filter: blur(14px);
+  opacity: 0.8;
+  cursor: pointer;
+  user-select: none;
+}
+.sample-image.is-masked:hover { filter: blur(11px); opacity: 0.88; }
+.sample-image.is-error {
+  min-height: 96px;
+  padding: 14px;
+  border-style: dashed;
+  background: rgba(15, 23, 42, 0.66);
+  color: var(--muted);
+  font-size: 12px;
+  object-fit: contain;
+}
 
 .mask-note {
   display: flex;
@@ -1027,6 +1058,7 @@ details.raw pre {
   .search-field { max-width: none; flex-basis: 100%; }
   .segmented { flex-wrap: wrap; }
   .sample { padding: 10px 12px; }
+  .sample-image { max-width: 100%; margin: 8px 0; border-radius: 8px; }
   .verdict-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cm-grid { grid-template-columns: 58px repeat(2, minmax(0, 1fr)); }
   .cm-cell { min-height: 66px; }

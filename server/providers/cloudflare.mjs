@@ -44,6 +44,7 @@ export function unwrapCloudflareResponse(data) {
 
 /**
  * 创建 Cloudflare Workers AI clef-omni provider。
+ * 支持文本与图片输入：judge(text, { images }) 时透传 images 到 typed-decision 请求体。
  * @param {{
  *   apiToken?: string,
  *   apiKey?: string,
@@ -77,5 +78,6 @@ export function createCloudflareProvider(options = {}) {
     fetchImpl: options.fetchImpl,
     concurrency: options.concurrency,
     unwrap: unwrapCloudflareResponse,
+    supportsImages: true,
   });
 }
